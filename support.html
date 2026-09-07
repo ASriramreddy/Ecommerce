@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Customer support for Sriram Store. Get help with orders, delivery, returns, and more." />
+    <title>Sriram Store | Customer Support</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      .support-hero { display: flex; align-items: center; justify-content: space-between; min-height: 340px; margin: 0 0 60px; padding: 50px 70px; background: #e9f0e5; }
+      .support-hero h1 { font-size: clamp(38px, 4.5vw, 58px); max-width: 520px; }
+      .support-hero p { max-width: 420px; margin: 18px 0 24px; color: #667367; font-size: 14px; line-height: 1.6; }
+      .support-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 60px; }
+      .support-section { padding: 0; }
+      .faq-item { border-bottom: 1px solid var(--line); }
+      .faq-question { width: 100%; text-align: left; background: transparent; border: 0; padding: 18px 0; color: var(--green-dark); font-size: 14px; font-weight: 700; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+      .faq-question::after { content: "+"; font-size: 20px; color: var(--green); }
+      .faq-question.open::after { content: "−"; }
+      .faq-answer { display: none; padding: 0 0 18px; color: #515852; font-size: 13px; line-height: 1.65; }
+      .faq-answer.open { display: block; }
+      .support-form { display: grid; gap: 14px; }
+      .support-form label { display: block; margin-bottom: 6px; color: #515852; font-size: 12px; font-weight: 700; }
+      .support-form input, .support-form select, .support-form textarea { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 12px; color: var(--ink); background: #fff; font-size: 13px; outline: 0; }
+      .support-form input:focus, .support-form select:focus, .support-form textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(56, 91, 69, .1); }
+      .support-form textarea { resize: vertical; min-height: 120px; }
+      .support-contact { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-bottom: 60px; }
+      .contact-card { padding: 24px; border: 1px solid var(--line); background: #fff; border-radius: 10px; text-align: center; }
+      .contact-card .icon { font-size: 28px; margin-bottom: 10px; }
+      .contact-card h3 { margin: 0 0 6px; font-size: 14px; color: var(--green-dark); }
+      .contact-card p { margin: 0; color: #767b76; font-size: 12px; line-height: 1.5; }
+      .support-status { min-height: 18px; margin-top: 8px; font-size: 12px; }
+      .support-status.is-valid { color: var(--green); }
+      .support-status.is-invalid { color: #c15e52; }
+      @media (max-width: 760px) {
+        .support-hero { padding: 40px 20px; }
+        .support-grid { grid-template-columns: 1fr; gap: 30px; }
+        .support-contact { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="store-header">
+      <nav aria-label="Store navigation">
+        <a class="nav-link" href="index.html">Home</a>
+        <a class="nav-link" href="index.html#products">Categories</a>
+        <a class="nav-link" href="index.html#offers">Offers</a>
+        <a class="nav-link" href="index.html#wishlist">Wishlist</a>
+        <a class="nav-link" href="index.html#orders">My orders</a>
+        <a class="nav-link active" href="support.html">Support</a>
+      </nav>
+    </header>
+    <main class="store-main">
+      <section class="support-hero">
+        <div>
+          <p class="eyebrow">We are here to help</p>
+          <h1>Customer Support</h1>
+          <p>Have a question about your order, delivery, or anything else? Reach out and we will get back to you as soon as possible.</p>
+          <a class="hero-link" href="#contact-form"><span>&rarr;</span> Contact us</a>
+        </div>
+      </section>
+
+      <section class="support-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Common questions</p>
+            <h2>Frequently Asked Questions</h2>
+          </div>
+        </div>
+        <div class="faq-list" id="faq-list">
+          <div class="faq-item">
+            <button class="faq-question" type="button">How do I track my order?</button>
+            <div class="faq-answer">You can track your order from the "My orders" section on the home page. We also send updates via email and SMS.</div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-question" type="button">What is your delivery timeline?</button>
+            <div class="faq-answer">We typically deliver within 24-48 hours depending on your location. You will see the estimated delivery date at checkout.</div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-question" type="button">How can I cancel or return an order?</button>
+            <div class="faq-answer">You can request a cancellation or return from the order details page. Orders can be cancelled before they are shipped.</div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-question" type="button">Do you offer cash on delivery?</button>
+            <div class="faq-answer">Yes, cash on delivery is available for most locations. You can select this option at checkout.</div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-question" type="button">How do I apply a coupon code?</button>
+            <div class="faq-answer">Enter your coupon code in the checkout page under "Discount code" and click Apply. The discount will be reflected in your total.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="support-section" id="contact-form">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Get in touch</p>
+            <h2>Contact Support</h2>
+          </div>
+        </div>
+        <div class="support-grid">
+          <form class="support-form" id="support-form" novalidate>
+            <div>
+              <label for="support-name">Full name</label>
+              <input id="support-name" type="text" placeholder="Your full name" required />
+            </div>
+            <div>
+              <label for="support-email">Email address</label>
+              <input id="support-email" type="email" placeholder="you@example.com" required />
+            </div>
+            <div>
+              <label for="support-order">Order ID (optional)</label>
+              <input id="support-order" type="text" placeholder="e.g. SR123456" />
+            </div>
+            <div>
+              <label for="support-category">Category</label>
+              <select id="support-category" required>
+                <option value="">Select a category</option>
+                <option value="order">Order issue</option>
+                <option value="delivery">Delivery</option>
+                <option value="return">Return / Refund</option>
+                <option value="product">Product quality</option>
+                <option value="coupon">Coupon / Offer</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label for="support-message">Message</label>
+              <textarea id="support-message" placeholder="Describe your issue..." required></textarea>
+            </div>
+            <button class="primary-button" type="submit">Send message <span>&rarr;</span></button>
+            <div class="support-status" id="support-status" role="status"></div>
+          </form>
+          <div class="support-contact">
+            <div class="contact-card">
+              <div class="icon">&#9742;</div>
+              <h3>Phone</h3>
+              <p>+91 98765 43210<br />Mon-Sat, 9am-7pm</p>
+            </div>
+            <div class="contact-card">
+              <div class="icon">&#9993;</div>
+              <h3>Email</h3>
+              <p>support@sriramstore.com<br />We reply within 24 hours</p>
+            </div>
+            <div class="contact-card">
+              <div class="icon">&#128205;</div>
+              <h3>Address</h3>
+              <p>123 Market Street,<br /> Chennai, Tamil Nadu</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <div class="toast" id="toast" role="status" aria-live="polite">
+      <span class="toast-icon">&#10003;</span><span id="toast-message"></span>
+    </div>
+    <script>
+      document.querySelectorAll(".faq-question").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const answer = btn.nextElementSibling;
+          const isOpen = btn.classList.contains("open");
+          document.querySelectorAll(".faq-question").forEach((q) => { q.classList.remove("open"); q.nextElementSibling.classList.remove("open"); });
+          if (!isOpen) { btn.classList.add("open"); answer.classList.add("open"); }
+        });
+      });
+      function showToast(message, success = true) {
+        const toast = document.querySelector("#toast");
+        document.querySelector("#toast-message").textContent = message;
+        document.querySelector(".toast-icon").textContent = success ? "✓" : "×";
+        toast.classList.add("show");
+        window.clearTimeout(showToast.timer);
+        showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 3000);
+      }
+      document.querySelector("#support-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        if (!form.checkValidity()) return form.reportValidity();
+        const status = document.querySelector("#support-status");
+        status.textContent = "Sending...";
+        status.className = "support-status";
+        const payload = {
+          name: document.querySelector("#support-name").value.trim(),
+          email: document.querySelector("#support-email").value.trim(),
+          orderId: document.querySelector("#support-order").value.trim() || null,
+          category: document.querySelector("#support-category").value,
+          message: document.querySelector("#support-message").value.trim()
+        };
+        try {
+          const response = await fetch("http://localhost:3000/support", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          const data = await response.json().catch(() => ({}));
+          if (response.ok) {
+            status.textContent = "Your message has been sent. We will get back to you shortly.";
+            status.className = "support-status is-valid";
+            form.reset();
+            showToast("Support request submitted successfully");
+          } else {
+            status.textContent = data.error || "Could not send your message. Please try again.";
+            status.className = "support-status is-invalid";
+          }
+        } catch (error) {
+          status.textContent = "Could not connect to support. Please try again later.";
+          status.className = "support-status is-invalid";
+        }
+      });
+    </script>
+  </body>
+</html>
