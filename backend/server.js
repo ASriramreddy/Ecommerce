@@ -1498,6 +1498,20 @@ app.get("/admin/support", requireAdmin, async (req, res) => {
     }
 });
 
+app.get("/admin/support/:id", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Valid ticket id is required" });
+    try {
+        await supportReady;
+        const [[ticket]] = await db.promise().query("SELECT id, name, email, phone, order_id, category, message, status, created_at FROM support_tickets WHERE id = ?", [id]);
+        if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+        res.json(ticket);
+    } catch (error) {
+        console.error("Support ticket detail fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load ticket" });
+    }
+});
+
 app.patch("/admin/support/:id", requireAdmin, async (req, res) => {
     const id = Number(req.params.id);
     const status = String(req.body?.status || "").trim();
