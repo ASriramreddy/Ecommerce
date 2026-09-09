@@ -1,13 +1,13 @@
 import "dotenv/config";
 import { fileURLToPath } from "url";
-import { dirname, resolve } from "path";
+import path, { dirname, resolve } from "path";
 import fs from "fs";
 import express from "express";
 import mysql from "mysql2";
 import cors from "cors";
-import path from "path";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -145,16 +145,20 @@ app.use(
 // ===============================
 
 const dbConfig = {
-    host: process.env.DB_HOST || "localhost",
-    port: Number(process.env.DB_PORT) || 3306,
-    user: process.env.DB_USER || "root",
-    password: process.env.DB_PASSWORD || "",
-    database: process.env.DB_NAME || "ecommerce",
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT),
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
 
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
-    multipleStatements: false
+    multipleStatements: false,
+
+    ssl: {
+        rejectUnauthorized: false
+    }
 };
 
 
