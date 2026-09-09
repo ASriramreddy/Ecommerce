@@ -9,7 +9,6 @@ import path from "path";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
 
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -146,15 +145,11 @@ app.use(
 // ===============================
 
 const dbConfig = {
-    host: process.env.DB_HOST,
+    host: process.env.DB_HOST || "localhost",
     port: Number(process.env.DB_PORT) || 3306,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-
-    ssl: {
-        rejectUnauthorized: false
-    },
+    user: process.env.DB_USER || "root",
+    password: process.env.DB_PASSWORD || "",
+    database: process.env.DB_NAME || "ecommerce",
 
     waitForConnections: true,
     connectionLimit: 10,
@@ -182,7 +177,15 @@ const db = mysql.createPool(dbConfig);
 // ===============================
 
 async function ensureDatabaseExists() {
-    console.log(`✅ Using existing database "${dbConfig.database}"`);
+    const bootstrap = mysql.createPool({ ...dbConfig, database: undefined });
+    try {
+        await bootstrap.promise().query(
+            `CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+        );
+        console.log(`✅ Database "${dbConfig.database}" is ready`);
+    } finally {
+        bootstrap.end();
+    }
 }
 
 const databaseReady = (async () => {
@@ -475,7 +478,6 @@ const supportReady = databaseReady.then(async () => {
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(150) NOT NULL,
             email VARCHAR(200) NOT NULL,
-            phone VARCHAR(20) NULL,
             order_id VARCHAR(50) NULL,
             category VARCHAR(100) NOT NULL,
             message TEXT NOT NULL,
@@ -483,23 +485,19 @@ const supportReady = databaseReady.then(async () => {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     `);
-    const [phoneCols] = await dbPromise.query("SHOW COLUMNS FROM support_tickets LIKE 'phone'");
-    if (!phoneCols.length) {
-        await dbPromise.query("ALTER TABLE support_tickets ADD COLUMN phone VARCHAR(20) NULL AFTER email");
-    }
     await dbPromise.query(`
         CREATE TABLE IF NOT EXISTS support_replies (
             id INT AUTO_INCREMENT PRIMARY KEY,
             ticket_id INT NOT NULL,
             message TEXT NOT NULL,
-            is_customer_reply TINYINT(1) NOT NULL DEFAULT 0,
+            is_customer_reply BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (ticket_id) REFERENCES support_tickets(id) ON DELETE CASCADE
         )
     `);
-    console.log("✅ Support tickets and replies tables are ready");
+    console.log("✅ Support tables are ready");
 }).catch((error) => {
-    console.error("❌ Support tickets setup failed:", error.message);
+    console.error("❌ Support tables setup failed:", error.message);
     throw error;
 });
 
@@ -525,10 +523,6 @@ Promise.all([inventoryReady, profilesReady, ordersReady, deliveryChargesReady, c
 // ===============================
 
 const PORT = process.env.PORT || 3000;
-
-app.get("/", (req, res) => {
-    res.send("Ecommerce Backend API is running");
-});
 
 app.listen(PORT, () => {
     console.log(
@@ -1172,6 +1166,81 @@ app.get("/admin/offers/:id", requireAdmin, async (req, res) => {
     }
 });
 
+app.get("/admin/support", requireAdmin, async (req, res) => {
+    try {
+        await supportReady;
+        const status = String(req.query.status || "").trim();
+        const query = status ? "SELECT * FROM support_tickets WHERE status = ? ORDER BY created_at DESC" : "SELECT * FROM support_tickets ORDER BY created_at DESC";
+        const params = status ? [status] : [];
+        const [tickets] = await db.promise().query(query, params);
+        res.json(tickets);
+    } catch (error) {
+        console.error("Admin support fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load support tickets" });
+    }
+});
+
+app.get("/admin/support/:id", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ticket id" });
+    try {
+        await supportReady;
+        const [tickets] = await db.promise().query("SELECT * FROM support_tickets WHERE id = ?", [id]);
+        const ticket = tickets[0];
+        if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+        res.json(ticket);
+    } catch (error) {
+        console.error("Admin support ticket fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load support ticket" });
+    }
+});
+
+app.get("/admin/support/:id/replies", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ticket id" });
+    try {
+        await supportReady;
+        const [replies] = await db.promise().query("SELECT * FROM support_replies WHERE ticket_id = ? ORDER BY created_at ASC", [id]);
+        res.json(replies);
+    } catch (error) {
+        console.error("Admin support replies fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load support replies" });
+    }
+});
+
+app.post("/admin/support/:id/replies", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ticket id" });
+    const message = String(req.body?.message || "").trim();
+    if (!message) return res.status(400).json({ error: "Reply message is required" });
+    try {
+        await supportReady;
+        const [tickets] = await db.promise().query("SELECT * FROM support_tickets WHERE id = ?", [id]);
+        if (!tickets[0]) return res.status(404).json({ error: "Ticket not found" });
+        await db.promise().query("INSERT INTO support_replies (ticket_id, message, is_customer_reply) VALUES (?, ?, ?)", [id, message, false]);
+        res.status(201).json({ message: "Reply added" });
+    } catch (error) {
+        console.error("Admin support reply failed:", error.message);
+        res.status(503).json({ error: "Could not add reply" });
+    }
+});
+
+app.patch("/admin/support/:id", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ticket id" });
+    const status = String(req.body?.status || "").trim();
+    if (!status) return res.status(400).json({ error: "Status is required" });
+    try {
+        await supportReady;
+        const [result] = await db.promise().query("UPDATE support_tickets SET status = ? WHERE id = ?", [status, id]);
+        if (!result.affectedRows) return res.status(404).json({ error: "Ticket not found" });
+        res.json({ message: "Ticket updated" });
+    } catch (error) {
+        console.error("Admin support update failed:", error.message);
+        res.status(503).json({ error: "Could not update ticket" });
+    }
+});
+
 async function replaceOfferTargets(offerId, productIds, categories) {
     await db.promise().query("DELETE FROM offer_products WHERE offer_id = ?", [offerId]);
     await db.promise().query("DELETE FROM offer_categories WHERE offer_id = ?", [offerId]);
@@ -1236,12 +1305,6 @@ app.post("/admin/offers", requireAdmin, async (req, res) => {
             [festivalId, name, couponCode, discountPercent, minOrderAmount, startDate || null, endDate || null, isActive, imageUrl]
         );
         await replaceOfferTargets(result.insertId, productIds, categories);
-        if (couponCode) {
-            await db.promise().query(
-                `INSERT INTO coupons (code, discount_percent, min_order_amount, max_uses, expires_at, is_active) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE discount_percent = VALUES(discount_percent), min_order_amount = VALUES(min_order_amount), max_uses = VALUES(max_uses), expires_at = VALUES(expires_at), is_active = VALUES(is_active)`,
-                [couponCode, discountPercent, minOrderAmount, maxUses, endDate || null, isActive]
-            );
-        }
         const offer = await loadOffer(result.insertId);
         res.status(201).json(offer);
     } catch (error) {
@@ -1304,17 +1367,6 @@ app.patch("/admin/offers/:id", requireAdmin, async (req, res) => {
             if (!productIds.length && !categories.length) return res.status(400).json({ error: "Select at least one product or category" });
             await replaceOfferTargets(id, productIds, categories);
         }
-        if (body.couponCode !== undefined) {
-            const [[updated]] = await db.promise().query("SELECT coupon_code, discount_percent, min_order_amount, end_date, is_active FROM offers WHERE id = ?", [id]);
-            if (updated?.coupon_code) {
-                await db.promise().query(
-                    `INSERT INTO coupons (code, discount_percent, min_order_amount, max_uses, expires_at, is_active) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE discount_percent = VALUES(discount_percent), min_order_amount = VALUES(min_order_amount), max_uses = VALUES(max_uses), expires_at = VALUES(expires_at), is_active = VALUES(is_active)`,
-                    [updated.coupon_code, updated.discount_percent, updated.min_order_amount, null, updated.end_date || null, updated.is_active]
-                );
-            } else {
-                await db.promise().query("DELETE FROM coupons WHERE code = (SELECT coupon_code FROM offers WHERE id = ?)", [id]);
-            }
-        }
         const offer = await loadOffer(id);
         if (!offer) return res.status(404).json({ error: "Offer not found" });
         res.json(offer);
@@ -1329,12 +1381,8 @@ app.delete("/admin/offers/:id", requireAdmin, async (req, res) => {
     if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid offer id" });
     try {
         await offersReady;
-        const [[existing]] = await db.promise().query("SELECT coupon_code FROM offers WHERE id = ?", [id]);
         const [result] = await db.promise().query("DELETE FROM offers WHERE id = ?", [id]);
         if (!result.affectedRows) return res.status(404).json({ error: "Offer not found" });
-        if (existing?.coupon_code) {
-            await db.promise().query("DELETE FROM coupons WHERE code = ?", [existing.coupon_code]).catch(() => {});
-        }
         res.json({ deleted: true });
     } catch (error) {
         console.error("Offer deletion failed:", error.message);
@@ -1381,7 +1429,7 @@ app.post("/test-email", async (req, res) => {
     }
 });
 
-async function sendSupportEmail({ to, name, phone, orderId, category, message }) {
+async function sendSupportEmail({ to, name, orderId, category, message }) {
     if (!emailTransporter) {
         throw new Error("Email transporter not configured. Check EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env");
     }
@@ -1391,7 +1439,7 @@ async function sendSupportEmail({ to, name, phone, orderId, category, message })
         to: to || ORDER_NOTIFICATION_EMAIL,
         replyTo: to || ORDER_NOTIFICATION_EMAIL,
         subject: `Support Request: ${categoryLabel} | Sriram Store`,
-        text: `New Support Request\n\nName: ${name}\nEmail: ${to}\nPhone: ${phone || "N/A"}\nOrder ID: ${orderId || "N/A"}\nCategory: ${categoryLabel}\n\nMessage:\n${message}\n\n— Sriram Store Support`,
+        text: `New Support Request\n\nName: ${name}\nEmail: ${to}\nOrder ID: ${orderId || "N/A"}\nCategory: ${categoryLabel}\n\nMessage:\n${message}\n\n— Sriram Store Support`,
         html: `
             <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#fafafa;padding:20px;">
                 <div style="background:#2c5f2d;color:#fff;padding:18px 22px;border-radius:8px 8px 0 0;text-align:center;">
@@ -1401,7 +1449,6 @@ async function sendSupportEmail({ to, name, phone, orderId, category, message })
                     <table style="width:100%;border-collapse:collapse;margin:0 0 18px;background:#f7faf5;border:1px solid #e3ecdc;border-radius:8px;">
                         <tr><td style="padding:10px 14px;color:#666;">Name</td><td style="padding:10px 14px;text-align:right;"><strong>${name}</strong></td></tr>
                         <tr><td style="padding:10px 14px;color:#666;">Email</td><td style="padding:10px 14px;text-align:right;">${to}</td></tr>
-                        <tr><td style="padding:10px 14px;color:#666;">Phone</td><td style="padding:10px 14px;text-align:right;">${phone || "N/A"}</td></tr>
                         <tr><td style="padding:10px 14px;color:#666;">Order ID</td><td style="padding:10px 14px;text-align:right;">${orderId || "N/A"}</td></tr>
                         <tr><td style="padding:10px 14px;color:#666;">Category</td><td style="padding:10px 14px;text-align:right;">${categoryLabel}</td></tr>
                         <tr><td style="padding:10px 14px;color:#666;vertical-align:top;">Message</td><td style="padding:10px 14px;text-align:right;white-space:pre-wrap;">${message}</td></tr>
@@ -1426,7 +1473,6 @@ app.post("/support", async (req, res) => {
     const body = req.body || {};
     const name = String(body.name || "").trim();
     const email = String(body.email || "").trim();
-    const phone = String(body.phone || "").trim() || null;
     const orderId = String(body.orderId || "").trim() || null;
     const category = String(body.category || "").trim();
     const message = String(body.message || "").trim();
@@ -1438,8 +1484,8 @@ app.post("/support", async (req, res) => {
     try {
         await supportReady;
         const [result] = await db.promise().query(
-            "INSERT INTO support_tickets (name, email, phone, order_id, category, message) VALUES (?, ?, ?, ?, ?, ?)",
-            [name, email, phone, orderId, category, message]
+            "INSERT INTO support_tickets (name, email, order_id, category, message) VALUES (?, ?, ?, ?, ?)",
+            [name, email, orderId, category, message]
         );
 
         let emailSent = false;
@@ -1447,7 +1493,7 @@ app.post("/support", async (req, res) => {
         if (emailTransporter) {
             (async () => {
                 try {
-                    await sendSupportEmail({ to: email, name, phone, orderId, category, message });
+                    await sendSupportEmail({ to: email, name, orderId, category, message });
                     emailSent = true;
                 } catch (err) {
                     emailSent = false;
@@ -1463,7 +1509,6 @@ app.post("/support", async (req, res) => {
             id: result.insertId,
             name,
             email,
-            phone,
             orderId,
             category,
             message,
@@ -1487,126 +1532,6 @@ app.get("/support/faq", async (req, res) => {
     res.json(faqs);
 });
 
-app.get("/admin/support", requireAdmin, async (req, res) => {
-    try {
-        await supportReady;
-        const [tickets] = await db.promise().query("SELECT id, name, email, phone, order_id, category, message, status, created_at FROM support_tickets ORDER BY created_at DESC");
-        res.json(tickets);
-    } catch (error) {
-        console.error("Support tickets fetch failed:", error.message);
-        res.status(503).json({ error: "Could not load support tickets" });
-    }
-});
-
-app.get("/admin/support/:id", requireAdmin, async (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Valid ticket id is required" });
-    try {
-        await supportReady;
-        const [[ticket]] = await db.promise().query("SELECT id, name, email, phone, order_id, category, message, status, created_at FROM support_tickets WHERE id = ?", [id]);
-        if (!ticket) return res.status(404).json({ error: "Ticket not found" });
-        res.json(ticket);
-    } catch (error) {
-        console.error("Support ticket detail fetch failed:", error.message);
-        res.status(503).json({ error: "Could not load ticket" });
-    }
-});
-
-app.patch("/admin/support/:id", requireAdmin, async (req, res) => {
-    const id = Number(req.params.id);
-    const status = String(req.body?.status || "").trim();
-    const allowed = ["open", "in_progress", "resolved", "closed"];
-    if (!Number.isInteger(id) || id < 1 || !allowed.includes(status)) return res.status(400).json({ error: "Valid ticket id and status are required" });
-    try {
-        await supportReady;
-        const [result] = await db.promise().query("UPDATE support_tickets SET status = ? WHERE id = ?", [status, id]);
-        if (!result.affectedRows) return res.status(404).json({ error: "Ticket not found" });
-        res.json({ id, status });
-    } catch (error) {
-        console.error("Support ticket update failed:", error.message);
-        res.status(503).json({ error: "Could not update ticket" });
-    }
-});
-
-app.delete("/admin/support/:id", requireAdmin, async (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Valid ticket id is required" });
-    try {
-        await supportReady;
-        const [result] = await db.promise().query("DELETE FROM support_tickets WHERE id = ?", [id]);
-        if (!result.affectedRows) return res.status(404).json({ error: "Ticket not found" });
-        res.json({ id, deleted: true });
-    } catch (error) {
-        console.error("Support ticket deletion failed:", error.message);
-        res.status(503).json({ error: "Could not delete ticket" });
-    }
-});
-
-app.get("/admin/support/:id/replies", requireAdmin, async (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Valid ticket id is required" });
-    try {
-        await supportReady;
-        const [replies] = await db.promise().query("SELECT id, ticket_id, message, created_at FROM support_replies WHERE ticket_id = ? ORDER BY created_at ASC", [id]);
-        res.json(replies);
-    } catch (error) {
-        console.error("Support replies fetch failed:", error.message);
-        res.status(503).json({ error: "Could not load replies" });
-    }
-});
-
-app.post("/support/:id/reply", async (req, res) => {
-    const id = Number(req.params.id);
-    const body = req.body || {};
-    const email = String(body.email || "").trim();
-    const message = String(body.message || "").trim();
-    if (!Number.isInteger(id) || id < 1 || !email || !message) return res.status(400).json({ error: "Valid ticket id, email, and message are required" });
-    try {
-        await supportReady;
-        const [[ticket]] = await db.promise().query("SELECT id, name, email, order_id, category, message AS ticket_message, status, created_at FROM support_tickets WHERE id = ?", [id]);
-        if (!ticket) return res.status(404).json({ error: "Ticket not found" });
-        if (ticket.email.toLowerCase() !== email.toLowerCase()) return res.status(403).json({ error: "Email does not match ticket owner" });
-        const [result] = await db.promise().query("INSERT INTO support_replies (ticket_id, message, is_customer_reply) VALUES (?, ?, 1)", [id, message]);
-        res.status(201).json({ id: result.insertId, ticket_id: id, message, created_at: new Date().toISOString() });
-    } catch (error) {
-        console.error("Customer support reply failed:", error.message);
-        res.status(503).json({ error: "Could not add reply" });
-    }
-});
-
-app.post("/admin/support/:id/replies", requireAdmin, async (req, res) => {
-    const id = Number(req.params.id);
-    const body = req.body || {};
-    const message = String(body.message || "").trim();
-    if (!Number.isInteger(id) || id < 1 || !message) return res.status(400).json({ error: "Valid ticket id and message are required" });
-    try {
-        await supportReady;
-        const [[ticket]] = await db.promise().query("SELECT id, name, email, order_id, category, message AS ticket_message, status, created_at FROM support_tickets WHERE id = ?", [id]);
-        if (!ticket) return res.status(404).json({ error: "Ticket not found" });
-        const [result] = await db.promise().query("INSERT INTO support_replies (ticket_id, message) VALUES (?, ?)", [id, message]);
-        if (emailTransporter && ticket.email) {
-            (async () => {
-                try {
-                    const categoryLabel = String(ticket.category || "general").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-                    await emailTransporter.sendMail({
-                        from: `Sriram Store Support <${EMAIL_USER}>`,
-                        to: ticket.email,
-                        subject: `Re: Support Ticket #${id} - ${categoryLabel}`,
-                        text: `Dear ${ticket.name},\n\nWe have replied to your support request.\n\nYour original message:\n${ticket.ticket_message}\n\nOur reply:\n${message}\n\nTicket ID: ${id}\nCategory: ${categoryLabel}\nStatus: ${ticket.status}\n\nYou can view your ticket anytime.\n\n— Sriram Store Support`,
-                        html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#fafafa;padding:20px;"><div style="background:#2c5f2d;color:#fff;padding:18px 22px;border-radius:8px 8px 0 0;text-align:center;"><h1 style="margin:0;color:#fff;font-size:22px;">Support Ticket Update</h1></div><div style="background:#fff;padding:24px 22px;border:1px solid #eee;border-top:none;border-radius:0 0 8px 8px;"><p style="margin:0 0 14px;">Dear <strong>${ticket.name}</strong>,</p><p style="margin:0 0 18px;color:#444;">We have replied to your support request. Here is the update:</p><table style="width:100%;border-collapse:collapse;margin:0 0 18px;background:#f7faf5;border:1px solid #e3ecdc;border-radius:8px;"><tr><td style="padding:10px 14px;color:#666;">Ticket ID</td><td style="padding:10px 14px;text-align:right;"><strong>${id}</strong></td></tr><tr><td style="padding:10px 14px;color:#666;">Category</td><td style="padding:10px 14px;text-align:right;">${categoryLabel}</td></tr><tr><td style="padding:10px 14px;color:#666;vertical-align:top;">Your Message</td><td style="padding:10px 14px;text-align:right;white-space:pre-wrap;">${ticket.ticket_message}</td></tr><tr style="background:#eaf3e3;"><td style="padding:10px 14px;color:#2c5f2d;vertical-align:top;"><strong>Our Reply</strong></td><td style="padding:10px 14px;text-align:right;white-space:pre-wrap;color:#2c5f2d;"><strong>${message}</strong></td></tr></table><p style="margin:0;color:#666;font-size:13px;">If you have any further questions, please reply to this email or submit a new support request.</p><p style="margin:14px 0 0;color:#999;font-size:12px;">— Sriram Store Support</p></div></div>`
-                    });
-                } catch (err) {
-                    console.error("[SUPPORT] Reply email notification failed:", err.message);
-                }
-            })();
-        }
-        res.status(201).json({ id: result.insertId, ticket_id: id, message, created_at: new Date().toISOString() });
-    } catch (error) {
-        console.error("Support reply creation failed:", error.message);
-        res.status(503).json({ error: "Could not add reply" });
-    }
-});
-
 app.post("/orders", async (req, res) => {
     const body = req.body || {};
     const userId = Number(body.userId);
@@ -1624,20 +1549,11 @@ app.post("/orders", async (req, res) => {
         await ordersReady;
         if (couponCode) {
             await couponsReady;
-            await offersReady;
             const [[coupon]] = await db.promise().query("SELECT * FROM coupons WHERE code = ?", [couponCode]);
-            if (coupon) {
-                if (!coupon.is_active) return res.status(400).json({ error: "Invalid coupon code" });
-                if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) return res.status(400).json({ error: "This coupon has expired" });
-                if (coupon.max_uses && coupon.used_count >= coupon.max_uses) return res.status(400).json({ error: "This coupon has reached its usage limit" });
-                await db.promise().query("UPDATE coupons SET used_count = used_count + 1 WHERE code = ?", [couponCode]);
-            } else {
-                const [[offer]] = await db.promise().query(
-                    "SELECT id, name, discount_percent, min_order_amount, is_active, start_date, end_date FROM offers WHERE coupon_code = ? AND is_active = 1 AND (start_date IS NULL OR start_date <= CURDATE()) AND (end_date IS NULL OR end_date >= CURDATE())",
-                    [couponCode]
-                );
-                if (!offer) return res.status(400).json({ error: "Invalid coupon code" });
-            }
+            if (!coupon || !coupon.is_active) return res.status(400).json({ error: "Invalid coupon code" });
+            if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) return res.status(400).json({ error: "This coupon has expired" });
+            if (coupon.max_uses && coupon.used_count >= coupon.max_uses) return res.status(400).json({ error: "This coupon has reached its usage limit" });
+            await db.promise().query("UPDATE coupons SET used_count = used_count + 1 WHERE code = ?", [couponCode]);
         }
         const id = `SR${Date.now().toString().slice(-6)}`;
 

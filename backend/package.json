@@ -13,8 +13,6 @@
 		"nodemailer": "^9.1.1"
 	},
 	"engines": {
-  "node": "22.x"
+		"node": "22.x"
+	}
 }
-
-}
-
