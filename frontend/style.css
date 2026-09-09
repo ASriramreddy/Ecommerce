@@ -460,7 +460,7 @@ body.auth-locked .auth-card > .close-button { display: none; }
         overflow-x: auto;
         overflow-y: hidden;
 
-        /* Keep buttons in one row */
+        /* Keep bu	ttons in one row */
         white-space: nowrap;
 
         /* Hide scrollbar */
