@@ -528,3 +528,19 @@ body.auth-locked .auth-card > .close-button { display: none; }
         max-width: 100%;
     }
 }
+@media (max-width: 760px) {
+    .product-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 20px 10px;
+    }
+
+    .product-card {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .product-image {
+        width: 100%;
+        height: auto;
+    }
+}
