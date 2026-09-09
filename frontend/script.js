@@ -1,4 +1,4 @@
-const apiUrl = "http://localhost:3000";
+const API_URL = "https://ecommerce-1-r5m4.onrender.com";
 let products = [];
 let cart = [];
 let couponApplied = false;
@@ -8,7 +8,6 @@ let selectedState = "";
 let selectedCategory = "";
 let wishlist = JSON.parse(localStorage.getItem("sriram-store-wishlist") || "[]");
 
-const API_URL = "https://ecommerce-1-r5m4.onrender.com";
 const productGrid = document.querySelector("#product-grid");
 const categoryFilter = document.querySelector("#category-filter");
 const searchInput = document.querySelector("#search-input");
@@ -259,7 +258,7 @@ async function submitAuth(form, endpoint, payload) {
   button.disabled = true;
   authError.textContent = "";
   try {
-    const response = await fetch(`${apiUrl}${endpoint}`, {
+    const response = await fetch(`${API_URL}${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -661,7 +660,7 @@ function renderWishlist() {
 
 async function loadProducts() {
   try {
-    const response = await fetch(`${apiUrl}/products`);
+    const response = await fetch(`${API_URL}/products`);
     if (!response.ok) throw new Error("Products request failed");
     products = await response.json();
     selectedCategory = "";
@@ -682,7 +681,7 @@ let activeOffer = null;
 
 async function loadOffers() {
   try {
-    const response = await fetch(`${apiUrl}/offers`);
+    const response = await fetch(`${API_URL}/offers`);
     festivalOffers = await response.json().catch(() => []);
     if (!Array.isArray(festivalOffers)) festivalOffers = [];
   } catch (error) {
