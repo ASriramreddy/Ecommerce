@@ -877,7 +877,7 @@ ordersList.addEventListener("click", async (event) => {
     const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
     if (user?.id) {
       try {
-        await fetch(`${apiUrl}/orders/${encodeURIComponent(orderId)}`, {
+        await fetch(`${API_URL}/orders/${encodeURIComponent(orderId)}`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ userId: user.id }),
@@ -931,7 +931,7 @@ document.querySelector("#request-return").addEventListener("click", async () => 
   const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
   if (user?.id) {
     try {
-      await fetch(`${apiUrl}/orders/${encodeURIComponent(orderId)}`, {
+      await fetch(`${API_URL}/orders/${encodeURIComponent(orderId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user.id, address: order?.address || "", returnRequested: true }),
@@ -1023,7 +1023,7 @@ async function applyCoupon(codeInput, status) {
   status.textContent = "Validating...";
   status.className = "coupon-status";
   try {
-    const response = await fetch(`${apiUrl}/coupons/${encodeURIComponent(code)}`);
+    const response = await fetch(`${API_URL}/coupons/${encodeURIComponent(code)}`);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       couponApplied = false;
@@ -1095,7 +1095,7 @@ async function loadAvailableCoupons() {
   const containers = [document.querySelector("#available-coupons"), document.querySelector("#bag-available-coupons")];
   try {
     const [couponsRes, offersRes] = await Promise.all([
-      fetch(`${apiUrl}/coupons`).then((r) => r.json().catch(() => [])).catch(() => []),
+      fetch(`${API_URL}/coupons`).then((r) => r.json().catch(() => [])).catch(() => []),
       Promise.resolve(festivalOffers)
     ]);
     const coupons = Array.isArray(couponsRes) ? couponsRes : [];
