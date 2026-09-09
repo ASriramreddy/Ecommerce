@@ -8,6 +8,7 @@ let selectedState = "";
 let selectedCategory = "";
 let wishlist = JSON.parse(localStorage.getItem("sriram-store-wishlist") || "[]");
 
+const API_URL = "https://ecommerce-1-r5m4.onrender.com";
 const productGrid = document.querySelector("#product-grid");
 const categoryFilter = document.querySelector("#category-filter");
 const searchInput = document.querySelector("#search-input");
