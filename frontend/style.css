@@ -451,3 +451,40 @@ body.auth-locked .auth-card > .close-button { display: none; }
         width: 100%;
     }
 }
+/* Mobile: keep ALL navigation items */
+@media (max-width: 760px) {
+
+    .store-header {
+        width: 100%;
+        padding: 0 12px;
+        gap: 10px;
+        overflow: hidden;
+    }
+
+    .store-header nav {
+        display: flex;
+        gap: 18px;
+        flex: 1;
+        min-width: 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        white-space: nowrap;
+        scrollbar-width: none;
+    }
+
+    .store-header nav::-webkit-scrollbar {
+        display: none;
+    }
+
+    .store-header nav .nav-link {
+        flex: 0 0 auto;
+        font-size: 16px;
+        white-space: nowrap;
+    }
+
+    .header-actions {
+        flex: 0 0 auto;
+        display: flex;
+        gap: 6px;
+    }
+}
