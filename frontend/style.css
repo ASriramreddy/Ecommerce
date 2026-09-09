@@ -404,8 +404,13 @@ body.auth-locked .auth-card > .close-button { display: none; }
 	.wishlist-item { grid-template-columns: 1fr auto; }
 	.wishlist-item .add-button { grid-column: 1 / -1; }
 }
-/* Mobile full-width fix */
+/* ==========================================
+   MOBILE FULL WIDTH + HORIZONTAL NAVIGATION
+   ========================================== */
+
 @media (max-width: 760px) {
+
+    /* ---------- FULL MOBILE WIDTH ---------- */
 
     html,
     body {
@@ -420,25 +425,96 @@ body.auth-locked .auth-card > .close-button { display: none; }
         width: 100%;
         max-width: 100%;
         box-sizing: border-box;
-    }
 
-    .offer-banner {
-        width: 100%;
-        max-width: 100%;
-        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+
+        padding: 0 12px;
+        gap: 10px;
+
+        overflow: hidden;
     }
 
     .store-main {
         width: 100%;
         max-width: 100%;
         box-sizing: border-box;
+
         padding-left: 20px;
         padding-right: 20px;
     }
 
+
+    /* ---------- HORIZONTAL NAVIGATION ---------- */
+
+    .store-header nav {
+        display: flex;
+
+        /* Take available mobile width */
+        flex: 1 1 auto;
+        min-width: 0;
+
+        gap: 18px;
+
+        /* Enable horizontal scrolling */
+        overflow-x: auto;
+        overflow-y: hidden;
+
+        /* Keep buttons in one row */
+        white-space: nowrap;
+
+        /* Hide scrollbar */
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+
+        /* Smooth scrolling on mobile */
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Chrome / Edge / Safari scrollbar */
+    .store-header nav::-webkit-scrollbar {
+        display: none;
+    }
+
+
+    /* ---------- KEEP ALL BUTTONS ---------- */
+
+    .store-header nav .nav-link {
+        flex: 0 0 auto;
+
+        white-space: nowrap;
+
+        font-size: 16px;
+
+        display: inline-flex;
+        align-items: center;
+
+        padding: 4px 0;
+    }
+
+
+    /* ---------- NOTIFICATION + CART ---------- */
+
+    .header-actions {
+        flex: 0 0 auto;
+
+        display: flex;
+        align-items: center;
+
+        gap: 6px;
+
+        white-space: nowrap;
+    }
+
+
+    /* ---------- PRODUCT GRID FULL WIDTH ---------- */
+
     .product-grid {
         width: 100%;
+        max-width: 100%;
+
         grid-template-columns: repeat(2, minmax(0, 1fr));
+
         gap: 28px 13px;
     }
 
@@ -449,42 +525,6 @@ body.auth-locked .auth-card > .close-button { display: none; }
 
     .product-image {
         width: 100%;
-    }
-}
-/* Mobile: keep ALL navigation items */
-@media (max-width: 760px) {
-
-    .store-header {
-        width: 100%;
-        padding: 0 12px;
-        gap: 10px;
-        overflow: hidden;
-    }
-
-    .store-header nav {
-        display: flex;
-        gap: 18px;
-        flex: 1;
-        min-width: 0;
-        overflow-x: auto;
-        overflow-y: hidden;
-        white-space: nowrap;
-        scrollbar-width: none;
-    }
-
-    .store-header nav::-webkit-scrollbar {
-        display: none;
-    }
-
-    .store-header nav .nav-link {
-        flex: 0 0 auto;
-        font-size: 16px;
-        white-space: nowrap;
-    }
-
-    .header-actions {
-        flex: 0 0 auto;
-        display: flex;
-        gap: 6px;
+        max-width: 100%;
     }
 }
