@@ -227,7 +227,7 @@ async function submitProfileAuth(form, endpoint, payload) {
   button.disabled = true;
   profileError.textContent = "";
   try {
-    const response = await fetch(`${apiUrl}${endpoint}`, {
+    const response = await fetch(`${API_URL}${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -457,7 +457,7 @@ async function renderOrders() {
   const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
   if (user?.id) {
     try {
-      const response = await fetch(`${apiUrl}/orders?userId=${user.id}`);
+      const response = await fetch(`${API_URL}/orders?userId=${user.id}`);
       const serverOrders = await response.json().catch(() => []);
       if (response.ok && Array.isArray(serverOrders)) {
         const localById = new Map(localOrders.map((o) => [o.id, o]));
@@ -494,7 +494,7 @@ async function openCheckout() {
   const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
   if (user?.id) {
     try {
-      const response = await fetch(`${apiUrl}/auth/me?userId=${user.id}`);
+      const response = await fetch(`${API_URL}/auth/me?userId=${user.id}`);
       const result = await response.json().catch(() => ({}));
       if (response.ok && result.profile) {
         const address = String(result.profile.address || "").trim();
@@ -814,7 +814,7 @@ async function openOrderDetails(orderId) {
   let order = localOrders.find((o) => o.id === orderId);
   if (user?.id) {
     try {
-      const response = await fetch(`${apiUrl}/orders?userId=${user.id}`);
+      const response = await fetch(`${API_URL}/orders?userId=${user.id}`);
       const serverOrders = await response.json().catch(() => []);
       if (response.ok && Array.isArray(serverOrders)) {
         const serverOrder = serverOrders.find((o) => o.id === orderId);
@@ -1201,7 +1201,7 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
   let confirmationEmail = null;
   if (user) {
     try {
-      const response = await fetch(`${apiUrl}/orders`, {
+      const response = await fetch(`${API_URL}/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user.id, items, address, couponCode: activeCouponCode, deliveryCharge, subtotal: orderSubtotal, discount: orderDiscount, totalAmount: orderTotal }),
@@ -1211,7 +1211,7 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
         serverOrderId = data.id;
         emailSent = !!data.emailSent;
         confirmationEmail = data.email || (user && user.email) || null;
-        await fetch(`${apiUrl}/auth/me`, {
+        await fetch(`${API_URL}/auth/me`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1286,7 +1286,7 @@ document.querySelector("#order-edit-form").addEventListener("submit", async (eve
   }
   if (user?.id) {
     try {
-      const response = await fetch(`${apiUrl}/orders/${encodeURIComponent(orderId)}`, {
+      const response = await fetch(`${API_URL}/orders/${encodeURIComponent(orderId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user.id, address }),
@@ -1349,7 +1349,7 @@ async function lookupPincode(pincode) {
         infoEl.textContent = "Checking delivery charges...";
         infoEl.className = "delivery-charge-info is-loading";
         try {
-          const chargeResponse = await fetch(`${apiUrl}/delivery-charge/${encodeURIComponent(state)}`);
+          const chargeResponse = await fetch(`${API_URL}/delivery-charge/${encodeURIComponent(state)}`);
           const chargeData = await chargeResponse.json().catch(() => ({}));
           if (chargeResponse.ok && typeof chargeData.delivery_charge === "number") {
             deliveryCharge = Number(chargeData.delivery_charge);
