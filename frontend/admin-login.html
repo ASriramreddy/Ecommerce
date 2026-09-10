@@ -436,7 +436,7 @@
 			});
 
 			async function request(url, options = {}) {
-				const response = await fetch(`${api}${url}`, { ...options, headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem(tokenKey) || ""}`, ...(options.headers || {}) } });
+				const response = await fetch(`${API_BASE}${url}`, { ...options, headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem(tokenKey) || ""}`, ...(options.headers || {}) } });
 				const data = await response.json().catch(() => ({}));
 				if (response.status === 401 && url !== "/admin/login") {
 					localStorage.removeItem(tokenKey);
@@ -696,7 +696,7 @@
 			}
 
 			async function loadSupportReplies(ticketId) {
-				const replies = await apiRequest(`/admin/support/${ticketId}/replies`);
+				const replies = await request(`/admin/support/${ticketId}/replies`);
 				const container = document.querySelector("#support-replies");
 				if (!replies.length) {
 					container.innerHTML = '<p style="margin:0;color:var(--adm-muted);font-size:12px;">No replies yet</p>';
