@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Customer Support Dashboard</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f5f7fb;
+    color: #1f2937;
+}
+
+.header {
+    background: #111827;
+    color: white;
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 22px;
+}
+
+.header button {
+    border: 0;
+    background: #ef4444;
+    color: white;
+    padding: 9px 15px;
+    border-radius: 7px;
+    cursor: pointer;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+/* STATISTICS */
+
+.stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+    margin-bottom: 22px;
+}
+
+.stat {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+}
+
+.stat h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    color: #6b7280;
+}
+
+.stat strong {
+    font-size: 28px;
+}
+
+/* FILTER */
+
+.toolbar {
+    background: white;
+    padding: 15px;
+    border-radius: 12px;
+    display: flex;
+    gap: 12px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+}
+
+.toolbar input,
+.toolbar select {
+    padding: 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 7px;
+}
+
+.toolbar input {
+    flex: 1;
+    min-width: 200px;
+}
+
+.toolbar button {
+    background: #2563eb;
+    color: white;
+    border: 0;
+    padding: 10px 17px;
+    border-radius: 7px;
+    cursor: pointer;
+}
+
+/* LAYOUT */
+
+.dashboard {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    gap: 18px;
+}
+
+.tickets {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.ticket-list {
+    max-height: 650px;
+    overflow-y: auto;
+}
+
+.ticket {
+    padding: 16px;
+    border-bottom: 1px solid #eee;
+    cursor: pointer;
+}
+
+.ticket:hover,
+.ticket.active {
+    background: #eff6ff;
+}
+
+.ticket-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.ticket-name {
+    font-weight: bold;
+}
+
+.ticket-email {
+    color: #6b7280;
+    font-size: 13px;
+    margin-top: 4px;
+}
+
+.ticket-message {
+    margin-top: 8px;
+    font-size: 14px;
+    color: #374151;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.badge {
+    padding: 4px 8px;
+    border-radius: 20px;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.open {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.in_progress {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.resolved {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.closed {
+    background: #e5e7eb;
+    color: #374151;
+}
+
+/* CONVERSATION */
+
+.conversation {
+    background: white;
+    border-radius: 12px;
+    min-height: 650px;
+    display: flex;
+    flex-direction: column;
+}
+
+.conversation-header {
+    padding: 18px;
+    border-bottom: 1px solid #eee;
+}
+
+.conversation-header h2 {
+    margin: 0 0 8px;
+}
+
+.customer-info {
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.messages {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    max-height: 440px;
+}
+
+.message {
+    max-width: 75%;
+    padding: 12px 15px;
+    margin-bottom: 12px;
+    border-radius: 12px;
+}
+
+.customer {
+    background: #f3f4f6;
+    margin-right: auto;
+}
+
+.admin {
+    background: #dbeafe;
+    margin-left: auto;
+}
+
+.message-label {
+    font-size: 11px;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.message-time {
+    font-size: 10px;
+    color: #6b7280;
+    margin-top: 5px;
+}
+
+/* REPLY */
+
+.reply-box {
+    padding: 15px;
+    border-top: 1px solid #eee;
+}
+
+.reply-box textarea {
+    width: 100%;
+    min-height: 90px;
+    resize: vertical;
+    padding: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+}
+
+.reply-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.reply-actions select,
+.reply-actions button {
+    padding: 10px 14px;
+    border-radius: 7px;
+    border: 1px solid #d1d5db;
+}
+
+.reply-actions button {
+    background: #2563eb;
+    color: white;
+    border: 0;
+    cursor: pointer;
+}
+
+.empty {
+    padding: 40px;
+    text-align: center;
+    color: #6b7280;
+}
+
+/* MOBILE */
+
+@media (max-width: 800px) {
+
+    .header {
+        padding: 14px;
+    }
+
+    .header h1 {
+        font-size: 18px;
+    }
+
+    .container {
+        padding: 0 10px;
+        margin-top: 15px;
+    }
+
+    .stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .dashboard {
+        grid-template-columns: 1fr;
+    }
+
+    .ticket-list {
+        max-height: 400px;
+    }
+
+    .conversation {
+        min-height: 600px;
+    }
+
+    .message {
+        max-width: 90%;
+    }
+
+    .reply-actions {
+        flex-direction: column;
+    }
+
+    .reply-actions select,
+    .reply-actions button {
+        width: 100%;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header class="header">
+    <h1>🎧 Customer Support Dashboard</h1>
+    <button onclick="logout()">Logout</button>
+</header>
+
+<div class="container">
+
+    <div class="stats">
+        <div class="stat">
+            <h3>Total Tickets</h3>
+            <strong id="totalTickets">0</strong>
+        </div>
+
+        <div class="stat">
+            <h3>Open</h3>
+            <strong id="openTickets">0</strong>
+        </div>
+
+        <div class="stat">
+            <h3>In Progress</h3>
+            <strong id="progressTickets">0</strong>
+        </div>
+
+        <div class="stat">
+            <h3>Resolved</h3>
+            <strong id="resolvedTickets">0</strong>
+        </div>
+    </div>
+
+    <div class="toolbar">
+
+        <input
+            type="text"
+            id="search"
+            placeholder="Search customer, email or ticket..."
+            oninput="filterTickets()"
+        >
+
+        <select id="statusFilter" onchange="loadTickets()">
+            <option value="">All Status</option>
+            <option value="open">Open</option>
+            <option value="in_progress">In Progress</option>
+            <option value="resolved">Resolved</option>
+            <option value="closed">Closed</option>
+        </select>
+
+        <button onclick="loadTickets()">Refresh</button>
+
+    </div>
+
+    <div class="dashboard">
+
+        <div class="tickets">
+
+            <div class="ticket-list" id="ticketList">
+                <div class="empty">Loading tickets...</div>
+            </div>
+
+        </div>
+
+        <div class="conversation">
+
+            <div id="conversationContent">
+
+                <div class="empty">
+                    Select a support ticket to view the conversation.
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+
+/*
+====================================================
+CHANGE THIS TO YOUR RENDER BACKEND URL
+====================================================
+*/
+
+const API_BASE =
+    "https://YOUR-RENDER-BACKEND.onrender.com";
+
+
+let tickets = [];
+let selectedTicket = null;
+
+
+/* ADMIN TOKEN */
+
+function getToken() {
+
+    return (
+        localStorage.getItem("adminToken") ||
+        localStorage.getItem("admin_token") ||
+        sessionStorage.getItem("adminToken")
+    );
+
+}
+
+
+/* API REQUEST */
+
+async function api(url, options = {}) {
+
+    const token = getToken();
+
+    const headers = {
+        "Content-Type": "application/json",
+        ...(options.headers || {})
+    };
+
+    if (token) {
+        headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(API_BASE + url, {
+        ...options,
+        headers
+    });
+
+    if (response.status === 401) {
+        alert("Admin session expired. Please login again.");
+        logout();
+        return null;
+    }
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+        throw new Error(data.error || "Request failed");
+    }
+
+    return data;
+}
+
+
+/* LOAD TICKETS */
+
+async function loadTickets() {
+
+    try {
+
+        const status =
+            document.getElementById("statusFilter").value;
+
+        const url = status
+            ? `/admin/support?status=${encodeURIComponent(status)}`
+            : `/admin/support`;
+
+        const data = await api(url);
+
+        if (!data) return;
+
+        tickets = Array.isArray(data) ? data : [];
+
+        updateStats();
+        renderTickets();
+
+    } catch (error) {
+
+        console.error(error);
+
+        document.getElementById("ticketList").innerHTML =
+            `<div class="empty">
+                Could not load support tickets.<br>
+                ${error.message}
+            </div>`;
+    }
+}
+
+
+/* STATISTICS */
+
+function updateStats() {
+
+    document.getElementById("totalTickets").textContent =
+        tickets.length;
+
+    document.getElementById("openTickets").textContent =
+        tickets.filter(t => t.status === "open").length;
+
+    document.getElementById("progressTickets").textContent =
+        tickets.filter(t => t.status === "in_progress").length;
+
+    document.getElementById("resolvedTickets").textContent =
+        tickets.filter(t => t.status === "resolved").length;
+}
+
+
+/* RENDER */
+
+function renderTickets() {
+
+    const list = document.getElementById("ticketList");
+
+    const search =
+        document.getElementById("search").value
+            .toLowerCase()
+            .trim();
+
+    const filtered = tickets.filter(ticket => {
+
+        return (
+            String(ticket.id).includes(search) ||
+            String(ticket.name || "").toLowerCase().includes(search) ||
+            String(ticket.email || "").toLowerCase().includes(search) ||
+            String(ticket.message || "").toLowerCase().includes(search)
+        );
+
+    });
+
+    if (!filtered.length) {
+
+        list.innerHTML =
+            `<div class="empty">
+                No support tickets found.
+            </div>`;
+
+        return;
+    }
+
+    list.innerHTML = filtered.map(ticket => {
+
+        const active =
+            selectedTicket &&
+            Number(selectedTicket.id) === Number(ticket.id)
+                ? "active"
+                : "";
+
+        return `
+            <div
+                class="ticket ${active}"
+                onclick="openTicket(${ticket.id})"
+            >
+
+                <div class="ticket-top">
+
+                    <div>
+                        <div class="ticket-name">
+                            #${ticket.id} - ${escapeHtml(ticket.name)}
+                        </div>
+
+                        <div class="ticket-email">
+                            ${escapeHtml(ticket.email)}
+                        </div>
+                    </div>
+
+                    <span class="badge ${ticket.status}">
+                        ${formatStatus(ticket.status)}
+                    </span>
+
+                </div>
+
+                <div class="ticket-message">
+                    ${escapeHtml(ticket.message)}
+                </div>
+
+            </div>
+        `;
+
+    }).join("");
+}
+
+
+/* SEARCH */
+
+function filterTickets() {
+    renderTickets();
+}
+
+
+/* OPEN TICKET */
+
+async function openTicket(id) {
+
+    try {
+
+        const ticket = await api(`/admin/support/${id}`);
+
+        if (!ticket) return;
+
+        selectedTicket = ticket;
+
+        renderTickets();
+
+        const replies =
+            await api(`/admin/support/${id}/replies`);
+
+        renderConversation(ticket, replies || []);
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert(error.message);
+    }
+}
+
+
+/* CONVERSATION */
+
+function renderConversation(ticket, replies) {
+
+    const content =
+        document.getElementById("conversationContent");
+
+    let messages = [];
+
+    messages.push({
+        message: ticket.message,
+        is_customer_reply: true,
+        created_at: ticket.created_at
+    });
+
+    messages = messages.concat(replies);
+
+    content.innerHTML = `
+
+        <div class="conversation-header">
+
+            <h2>
+                Ticket #${ticket.id}
+            </h2>
+
+            <div class="customer-info">
+                <strong>${escapeHtml(ticket.name)}</strong>
+                · ${escapeHtml(ticket.email)}
+                ${ticket.order_id
+                    ? ` · Order #${escapeHtml(ticket.order_id)}`
+                    : ""}
+                · ${escapeHtml(ticket.category)}
+            </div>
+
+        </div>
+
+        <div class="messages">
+
+            ${messages.map(message => `
+
+                <div class="message ${
+                    message.is_customer_reply
+                        ? "customer"
+                        : "admin"
+                }">
+
+                    <div class="message-label">
+                        ${
+                            message.is_customer_reply
+                                ? "CUSTOMER"
+                                : "SUPPORT TEAM"
+                        }
+                    </div>
+
+                    <div>
+                        ${escapeHtml(message.message)}
+                    </div>
+
+                    <div class="message-time">
+                        ${formatDate(message.created_at)}
+                    </div>
+
+                </div>
+
+            `).join("")}
+
+        </div>
+
+        <div class="reply-box">
+
+            <textarea
+                id="replyMessage"
+                placeholder="Write your reply to the customer..."
+            ></textarea>
+
+            <div class="reply-actions">
+
+                <select id="newStatus">
+
+                    <option value="open"
+                        ${ticket.status === "open" ? "selected" : ""}>
+                        Open
+                    </option>
+
+                    <option value="in_progress"
+                        ${ticket.status === "in_progress" ? "selected" : ""}>
+                        In Progress
+                    </option>
+
+                    <option value="resolved"
+                        ${ticket.status === "resolved" ? "selected" : ""}>
+                        Resolved
+                    </option>
+
+                    <option value="closed"
+                        ${ticket.status === "closed" ? "selected" : ""}>
+                        Closed
+                    </option>
+
+                </select>
+
+                <button onclick="updateStatus()">
+                    Update Status
+                </button>
+
+                <button onclick="sendReply()">
+                    Send Reply
+                </button>
+
+            </div>
+
+        </div>
+    `;
+}
+
+
+/* SEND REPLY */
+
+async function sendReply() {
+
+    if (!selectedTicket) return;
+
+    const textarea =
+        document.getElementById("replyMessage");
+
+    const message =
+        textarea.value.trim();
+
+    if (!message) {
+
+        alert("Please enter a reply.");
+
+        return;
+    }
+
+    try {
+
+        await api(
+            `/admin/support/${selectedTicket.id}/replies`,
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    message
+                })
+            }
+        );
+
+        textarea.value = "";
+
+        await openTicket(selectedTicket.id);
+
+        alert("Reply sent successfully.");
+
+    } catch (error) {
+
+        alert(error.message);
+    }
+}
+
+
+/* UPDATE STATUS */
+
+async function updateStatus() {
+
+    if (!selectedTicket) return;
+
+    const status =
+        document.getElementById("newStatus").value;
+
+    try {
+
+        await api(
+            `/admin/support/${selectedTicket.id}`,
+            {
+                method: "PATCH",
+                body: JSON.stringify({
+                    status
+                })
+            }
+        );
+
+        selectedTicket.status = status;
+
+        await loadTickets();
+
+        await openTicket(selectedTicket.id);
+
+    } catch (error) {
+
+        alert(error.message);
+    }
+}
+
+
+/* LOGOUT */
+
+function logout() {
+
+    localStorage.removeItem("adminToken");
+    localStorage.removeItem("admin_token");
+    sessionStorage.removeItem("adminToken");
+
+    window.location.href = "admin-login.html";
+}
+
+
+/* HELPERS */
+
+function formatStatus(status) {
+
+    return String(status)
+        .replace("_", " ")
+        .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+
+function formatDate(date) {
+
+    if (!date) return "";
+
+    return new Date(date).toLocaleString();
+}
+
+
+function escapeHtml(value) {
+
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+
+/* START */
+
+loadTickets();
+
+</script>
+
+</body>
+</html>
