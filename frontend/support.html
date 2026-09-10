@@ -200,7 +200,7 @@
           message: document.querySelector("#support-message").value.trim()
         };
         try {
-          const response = await fetch(`${API_BASE}/support`, {
+          const response = await fetch("https://ecommerce-1-r5m4.onrender.com/support", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
