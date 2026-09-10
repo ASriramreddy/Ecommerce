@@ -439,7 +439,7 @@
 		});
 
 		async function request(url, options = {}) {
-			const response = await fetch(`${api}${url}`, { ...options, headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem(tokenKey) || ""}`, ...(options.headers || {}) } });
+			const response = await fetch(`${API_BASE}${url}`, { ...options, headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem(tokenKey) || ""}`, ...(options.headers || {}) } });
 			const data = await response.json().catch(() => ({}));
 			if (response.status === 401 && url !== "/admin/login") {
 				localStorage.removeItem(tokenKey);
