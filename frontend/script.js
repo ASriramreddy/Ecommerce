@@ -1,3 +1,16 @@
+const API_BASE = "YOUR_RENDER_BACKEND_URL";
+
+const api = {
+    async get(path) {
+        const response = await fetch(API_BASE + path);
+
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+
+        return response.json();
+    }
+}; 
 const API_URL = "https://ecommerce-1-r5m4.onrender.com";
 let products = [];
 let cart = [];
