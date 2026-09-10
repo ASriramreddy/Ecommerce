@@ -424,7 +424,7 @@ CHANGE THIS TO YOUR RENDER BACKEND URL
 ====================================================
 */
 
-const api = "https://ecommerce-1-r5m4.onrender.com";
+const API_BASE = "https://ecommerce-1-r5m4.onrender.com";
 
 
 let tickets = [];
@@ -460,7 +460,7 @@ async function apiRequest(url, options = {}) {
         headers.Authorization = `Bearer ${token}`;
     }
 
-    const response = await fetch(api + url, {
+    const response = await fetch(API_BASE + url, {
         ...options,
         headers
     });
