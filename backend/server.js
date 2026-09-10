@@ -482,6 +482,7 @@ const supportReady = databaseReady.then(async () => {
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(150) NOT NULL,
             email VARCHAR(200) NOT NULL,
+            phone VARCHAR(20) NULL,
             order_id VARCHAR(50) NULL,
             category VARCHAR(100) NOT NULL,
             message TEXT NOT NULL,
@@ -489,6 +490,10 @@ const supportReady = databaseReady.then(async () => {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     `);
+    const [phoneCols] = await dbPromise.query("SHOW COLUMNS FROM support_tickets LIKE 'phone'");
+    if (!phoneCols.length) {
+        await dbPromise.query("ALTER TABLE support_tickets ADD COLUMN phone VARCHAR(20) NULL AFTER email");
+    }
     await dbPromise.query(`
         CREATE TABLE IF NOT EXISTS support_replies (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -1433,7 +1438,7 @@ app.post("/test-email", async (req, res) => {
     }
 });
 
-async function sendSupportEmail({ to, name, orderId, category, message }) {
+async function sendSupportEmail({ to, name, phone, orderId, category, message }) {
     if (!emailTransporter) {
         throw new Error("Email transporter not configured. Check EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env");
     }
@@ -1443,7 +1448,7 @@ async function sendSupportEmail({ to, name, orderId, category, message }) {
         to: to || ORDER_NOTIFICATION_EMAIL,
         replyTo: to || ORDER_NOTIFICATION_EMAIL,
         subject: `Support Request: ${categoryLabel} | Sriram Store`,
-        text: `New Support Request\n\nName: ${name}\nEmail: ${to}\nOrder ID: ${orderId || "N/A"}\nCategory: ${categoryLabel}\n\nMessage:\n${message}\n\n— Sriram Store Support`,
+        text: `New Support Request\n\nName: ${name}\nEmail: ${to}\nPhone: ${phone || "N/A"}\nOrder ID: ${orderId || "N/A"}\nCategory: ${categoryLabel}\n\nMessage:\n${message}\n\n— Sriram Store Support`,
         html: `
             <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#fafafa;padding:20px;">
                 <div style="background:#2c5f2d;color:#fff;padding:18px 22px;border-radius:8px 8px 0 0;text-align:center;">
@@ -1453,6 +1458,7 @@ async function sendSupportEmail({ to, name, orderId, category, message }) {
                     <table style="width:100%;border-collapse:collapse;margin:0 0 18px;background:#f7faf5;border:1px solid #e3ecdc;border-radius:8px;">
                         <tr><td style="padding:10px 14px;color:#666;">Name</td><td style="padding:10px 14px;text-align:right;"><strong>${name}</strong></td></tr>
                         <tr><td style="padding:10px 14px;color:#666;">Email</td><td style="padding:10px 14px;text-align:right;">${to}</td></tr>
+                        <tr><td style="padding:10px 14px;color:#666;">Phone</td><td style="padding:10px 14px;text-align:right;">${phone || "N/A"}</td></tr>
                         <tr><td style="padding:10px 14px;color:#666;">Order ID</td><td style="padding:10px 14px;text-align:right;">${orderId || "N/A"}</td></tr>
                         <tr><td style="padding:10px 14px;color:#666;">Category</td><td style="padding:10px 14px;text-align:right;">${categoryLabel}</td></tr>
                         <tr><td style="padding:10px 14px;color:#666;vertical-align:top;">Message</td><td style="padding:10px 14px;text-align:right;white-space:pre-wrap;">${message}</td></tr>
@@ -1477,6 +1483,7 @@ app.post("/support", async (req, res) => {
     const body = req.body || {};
     const name = String(body.name || "").trim();
     const email = String(body.email || "").trim();
+    const phone = String(body.phone || "").trim() || null;
     const orderId = String(body.orderId || "").trim() || null;
     const category = String(body.category || "").trim();
     const message = String(body.message || "").trim();
@@ -1488,8 +1495,8 @@ app.post("/support", async (req, res) => {
     try {
         await supportReady;
         const [result] = await db.promise().query(
-            "INSERT INTO support_tickets (name, email, order_id, category, message) VALUES (?, ?, ?, ?, ?)",
-            [name, email, orderId, category, message]
+            "INSERT INTO support_tickets (name, email, phone, order_id, category, message) VALUES (?, ?, ?, ?, ?, ?)",
+            [name, email, phone, orderId, category, message]
         );
 
         let emailSent = false;
@@ -1497,7 +1504,7 @@ app.post("/support", async (req, res) => {
         if (emailTransporter) {
             (async () => {
                 try {
-                    await sendSupportEmail({ to: email, name, orderId, category, message });
+                    await sendSupportEmail({ to: email, name, phone, orderId, category, message });
                     emailSent = true;
                 } catch (err) {
                     emailSent = false;
@@ -1513,6 +1520,7 @@ app.post("/support", async (req, res) => {
             id: result.insertId,
             name,
             email,
+            phone,
             orderId,
             category,
             message,

@@ -37,7 +37,9 @@ const discountFor = (product) => Math.min(100, Math.max(0, Number(product.discou
 const finalPrice = (product) => Number(product.price) * (1 - discountFor(product) / 100);
 const imageFor = (product) => {
   if (typeof product.image === "string" && /^https?:\/\//.test(product.image)) return product.image;
-  if (typeof product.image === "string" && product.image.startsWith("/")) return `${apiUrl}${product.image}`;
+if (typeof product.image === "string" && product.image.startsWith("/")) {
+    return `${API_URL}${product.image}`;
+}
   const imageName = product.name.toLowerCase().includes("tomato") ? "tomato" : product.name.toLowerCase().includes("mango") ? "mango" : product.name.toLowerCase().includes("carrot") ? "carrot" : "";
   return imageName ? `/images/${imageName}.jpg` : "";
 };

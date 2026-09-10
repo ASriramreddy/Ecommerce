@@ -436,6 +436,7 @@ let selectedTicket = null;
 function getToken() {
 
     return (
+        localStorage.getItem("sriram-admin-token") ||
         localStorage.getItem("adminToken") ||
         localStorage.getItem("admin_token") ||
         sessionStorage.getItem("adminToken")
@@ -446,7 +447,7 @@ function getToken() {
 
 /* API REQUEST */
 
-async function api(url, options = {}) {
+async function apiRequest(url, options = {}) {
 
     const token = getToken();
 
@@ -493,7 +494,7 @@ async function loadTickets() {
             ? `/admin/support?status=${encodeURIComponent(status)}`
             : `/admin/support`;
 
-        const data = await api(url);
+        const data = await apiRequest(url);
 
         if (!data) return;
 
@@ -621,7 +622,7 @@ async function openTicket(id) {
 
     try {
 
-        const ticket = await api(`/admin/support/${id}`);
+        const ticket = await apiRequest(`/admin/support/${id}`);
 
         if (!ticket) return;
 
@@ -630,7 +631,7 @@ async function openTicket(id) {
         renderTickets();
 
         const replies =
-            await api(`/admin/support/${id}/replies`);
+            await apiRequest(`/admin/support/${id}/replies`);
 
         renderConversation(ticket, replies || []);
 
@@ -780,7 +781,7 @@ async function sendReply() {
 
     try {
 
-        await api(
+        await apiRequest(
             `/admin/support/${selectedTicket.id}/replies`,
             {
                 method: "POST",
@@ -814,7 +815,7 @@ async function updateStatus() {
 
     try {
 
-        await api(
+        await apiRequest(
             `/admin/support/${selectedTicket.id}`,
             {
                 method: "PATCH",
@@ -841,6 +842,7 @@ async function updateStatus() {
 
 function logout() {
 
+    localStorage.removeItem("sriram-admin-token");
     localStorage.removeItem("adminToken");
     localStorage.removeItem("admin_token");
     sessionStorage.removeItem("adminToken");
@@ -880,7 +882,11 @@ function escapeHtml(value) {
 
 /* START */
 
-loadTickets();
+if (!getToken()) {
+    window.location.href = "admin-login.html";
+} else {
+    loadTickets();
+}
 
 </script>
 
