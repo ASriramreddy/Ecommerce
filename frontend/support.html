@@ -149,7 +149,8 @@
           <form class="support-form" id="support-form" novalidate>
             <div>
               <label for="support-order">Order ID <span style="color:var(--danger);">*</span></label>
-              <input id="support-order" type="text" placeholder="e.g. SR123456" required autocomplete="off" />
+              <input id="support-order" type="text" list="support-order-options" placeholder="e.g. SR123456" required autocomplete="off" />
+              <datalist id="support-order-options"></datalist>
             </div>
             <div>
               <label for="support-name">Name <span style="color:var(--danger);">*</span></label>
@@ -266,7 +267,7 @@
         return new Date(date).toLocaleString();
       }
 
-      async function loadUserTickets() {
+      async function loadUserTickets(ticketId = null) {
         const user = JSON.parse(localStorage.getItem("sriram-store-user") || "null");
         if (!user?.email) return;
 
@@ -274,10 +275,31 @@
           const response = await fetch(`${API_URL}/support/user/${encodeURIComponent(user.email)}`);
           const data = await response.json().catch(() => ({}));
           if (response.ok && Array.isArray(data)) {
-            renderConversations(data);
+            const visibleTickets = ticketId
+              ? data.filter((ticket) => Number(ticket.id) === Number(ticketId))
+              : data;
+            renderConversations(visibleTickets);
           }
         } catch (error) {
           console.error("Failed to load user tickets:", error.message);
+        }
+      }
+
+      async function loadUserOrderOptions() {
+        const user = JSON.parse(localStorage.getItem("sriram-store-user") || "null");
+        const options = document.querySelector("#support-order-options");
+        if (!user?.id || !options) return;
+
+        try {
+          const response = await fetch(`${API_URL}/orders?userId=${encodeURIComponent(user.id)}`);
+          const orders = await response.json().catch(() => []);
+          if (!response.ok || !Array.isArray(orders)) return;
+          options.innerHTML = orders
+            .filter((order) => order?.id != null)
+            .map((order) => `<option value="${escapeHtml(order.id)}"></option>`)
+            .join("");
+        } catch (error) {
+          console.error("Failed to load user orders:", error.message);
         }
       }
 
@@ -353,6 +375,7 @@
               if (response.ok) {
                 textarea.value = "";
                 showToast("Reply sent");
+                await loadUserTickets();
                 await loadTicketMessages(ticketId);
               } else {
                 showToast(data.error || "Failed to send reply", false);
@@ -476,6 +499,7 @@
           if (nameInput && !nameInput.value && user.name) nameInput.value = user.name;
           if (emailInput && !emailInput.value && user.email) emailInput.value = user.email;
           loadUserTickets();
+          loadUserOrderOptions();
         }
       });
 
@@ -511,7 +535,7 @@
             status.textContent = "Message sent. We will get back to you shortly.";
             status.className = "support-status is-valid";
             textarea.value = "";
-            await loadUserTickets();
+            await loadUserTickets(data.id);
           } else {
             status.textContent = data.error || "Could not send your message.";
             status.className = "support-status is-invalid";
