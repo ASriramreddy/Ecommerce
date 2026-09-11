@@ -31,7 +31,7 @@
         ><input
           id="search-input"
           type="search"
-          placeholder="Search fresh items..."
+          placeholder="Search fresh itemso..."
           aria-label="Search fresh items"
         />
       </div>
@@ -230,6 +230,25 @@
             <button class="primary-button" id="details-add" type="button">
               Add to bag <span>&rarr;</span>
             </button>
+          </div>
+        </div>
+        <div class="details-reviews" id="details-reviews">
+          <div class="reviews-header">
+            <h3>Ratings & Reviews</h3>
+            <span class="reviews-average" id="reviews-average"></span>
+          </div>
+          <div class="reviews-list" id="reviews-list"></div>
+          <div class="review-form" id="review-form">
+            <h4>Write a review</h4>
+            <div class="star-rating-input" id="star-rating-input">
+              <button type="button" data-rating="1" aria-label="1 star">★</button>
+              <button type="button" data-rating="2" aria-label="2 stars">★</button>
+              <button type="button" data-rating="3" aria-label="3 stars">★</button>
+              <button type="button" data-rating="4" aria-label="4 stars">★</button>
+              <button type="button" data-rating="5" aria-label="5 stars">★</button>
+            </div>
+            <textarea id="review-comment" rows="3" placeholder="Share your experience with this product..."></textarea>
+            <button class="primary-button" id="submit-review" type="button">Submit Review</button>
           </div>
         </div>
       </article>

@@ -1,4 +1,4 @@
-const API_BASE = "YOUR_RENDER_BACKEND_URL";
+const API_BASE = "https://ecommerce-1-r5m4.onrender.com";
 
 const api = {
     async get(path) {
@@ -50,9 +50,9 @@ const discountFor = (product) => Math.min(100, Math.max(0, Number(product.discou
 const finalPrice = (product) => Number(product.price) * (1 - discountFor(product) / 100);
 const imageFor = (product) => {
   if (typeof product.image === "string" && /^https?:\/\//.test(product.image)) return product.image;
-if (typeof product.image === "string" && product.image.startsWith("/")) {
+  if (typeof product.image === "string" && product.image.startsWith("/")) {
     return `${API_URL}${product.image}`;
-}
+  }
   const imageName = product.name.toLowerCase().includes("tomato") ? "tomato" : product.name.toLowerCase().includes("mango") ? "mango" : product.name.toLowerCase().includes("carrot") ? "carrot" : "";
   return imageName ? `/images/${imageName}.jpg` : "";
 };
@@ -129,6 +129,71 @@ function renderStars(rating) {
   const half = (rating || 0) % 1 >= 0.5 ? 1 : 0;
   const empty = 5 - full - half;
   return "★".repeat(full) + (half ? "½" : "") + "☆".repeat(empty);
+}
+
+async function loadProductReviews(productId) {
+  try {
+    const [reviewsRes, ratingRes] = await Promise.all([
+      fetch(`${API_URL}/products/${productId}/reviews`).then(r => r.json().catch(() => [])),
+      fetch(`${API_URL}/products/${productId}/rating`).then(r => r.json().catch(() => ({ avgRating: 0, reviewCount: 0 })))
+    ]);
+    const reviews = Array.isArray(reviewsRes) ? reviewsRes : [];
+    const rating = ratingRes?.avgRating || 0;
+    const count = ratingRes?.reviewCount || 0;
+    renderReviews(reviews, rating, count);
+  } catch (error) {
+    console.error("Could not load reviews:", error.message);
+    renderReviews([], 0, 0);
+  }
+}
+
+function renderReviews(reviews, avgRating, count) {
+  const list = document.querySelector("#reviews-list");
+  const averageEl = document.querySelector("#reviews-average");
+  if (!list || !averageEl) return;
+  averageEl.textContent = avgRating ? `${avgRating.toFixed(1)} ★ (${count})` : "No ratings yet";
+  if (!reviews.length) {
+    list.innerHTML = '<p class="no-reviews">No reviews yet. Be the first to review!</p>';
+    return;
+  }
+  list.innerHTML = reviews.map((review) => `
+    <div class="review-item">
+      <div class="review-meta">
+        <span class="review-author">${escapeHtml(review.userName || "Customer")}</span>
+        <span class="review-date">${new Date(review.createdAt).toLocaleDateString()}</span>
+      </div>
+      <div class="review-stars">${renderStars(review.rating)}</div>
+      <p class="review-comment">${escapeHtml(review.comment || "")}</p>
+    </div>
+  `).join("");
+}
+
+let selectedRating = 0;
+
+async function submitReview(productId) {
+  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+  if (!user?.id) return showToast("Please sign in to review", false);
+  if (!selectedRating) return showToast("Please select a rating", false);
+  const comment = document.querySelector("#review-comment")?.value?.trim() || "";
+  try {
+    const response = await fetch(`${API_URL}/products/${productId}/reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: user.id, rating: selectedRating, comment })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not submit review");
+    showToast("Review submitted successfully");
+    selectedRating = 0;
+    if (document.querySelector("#review-comment")) document.querySelector("#review-comment").value = "";
+    document.querySelectorAll("#star-rating-input button").forEach((btn, idx) => {
+      btn.classList.toggle("is-active", idx < selectedRating);
+    });
+    await loadProductReviews(productId);
+    await loadProducts();
+  } catch (error) {
+    showToast(error.message, false);
+  }
 }
 
 function showOrderSuccess({ orderId, items, subtotal, discount, total, delivery, couponCode, emailSent, email }) {
@@ -409,7 +474,7 @@ function renderCategoryFilter() {
   categoryFilter.innerHTML = buttons.map((button) => `<button class="category-button ${selectedCategory === button.value ? "is-active" : ""}" type="button" data-category="${button.value}">${button.label}</button>`).join("");
 }
 
-function openDetails(id) {
+async function openDetails(id) {
   const product = productById(id);
   if (!product) return;
   detailsModal.dataset.productId = id;
@@ -429,6 +494,8 @@ function openDetails(id) {
   document.querySelector("#details-description").textContent = product.description || `Fresh ${product.name}, carefully selected and delivered in its best condition.`;
   document.querySelector("#details-unit").textContent = discountFor(product) ? `${discountFor(product)}% off · 1 pack` : "1 pack";
   document.querySelector("#details-quantity").textContent = "1";
+  const productId = Number(detailsModal.dataset.productId);
+  await loadProductReviews(productId);
   detailsModal.classList.add("open");
   detailsModal.setAttribute("aria-hidden", "false");
 }
@@ -1147,6 +1214,19 @@ document.addEventListener("click", (event) => {
   applyCoupon(bagInput || checkoutInput, document.querySelector("#bag-coupon-status") || document.querySelector("#coupon-status"));
 });
 detailsModal.querySelectorAll("[data-close-details]").forEach((element) => element.addEventListener("click", () => closeModal(detailsModal)));
+document.querySelector("#star-rating-input")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-rating]");
+  if (!button) return;
+  selectedRating = Number(button.dataset.rating);
+  document.querySelectorAll("#star-rating-input button").forEach((btn, idx) => {
+    btn.classList.toggle("is-active", idx < selectedRating);
+  });
+});
+document.querySelector("#submit-review")?.addEventListener("click", async () => {
+  const productId = Number(detailsModal.dataset.productId);
+  if (!productId) return;
+  await submitReview(productId);
+});
 checkoutModal.querySelectorAll("[data-close-checkout]").forEach((element) => element.addEventListener("click", () => closeModal(checkoutModal)));
 orderEditModal.querySelectorAll("[data-close-order-edit]").forEach((element) => element.addEventListener("click", () => closeModal(orderEditModal)));
 profileModal.querySelectorAll("[data-close-profile]").forEach((element) => element.addEventListener("click", () => closeProfile()));

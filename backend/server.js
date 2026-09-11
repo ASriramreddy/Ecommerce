@@ -510,7 +510,27 @@ const supportReady = databaseReady.then(async () => {
     throw error;
 });
 
-Promise.all([inventoryReady, profilesReady, ordersReady, deliveryChargesReady, couponsReady, festivalsReady, offersReady, supportReady])
+const reviewsReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS reviews (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            product_id INT NOT NULL,
+            user_id INT NOT NULL,
+            rating DECIMAL(2,1) NOT NULL,
+            comment TEXT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `);
+    console.log("✅ Reviews table is ready");
+}).catch((error) => {
+    console.error("❌ Reviews table setup failed:", error.message);
+    throw error;
+});
+
+Promise.all([inventoryReady, profilesReady, ordersReady, deliveryChargesReady, couponsReady, festivalsReady, offersReady, supportReady, reviewsReady])
     .then(() => console.log("✅ All tables are ready"))
     .catch((error) => console.error("❌ Schema setup encountered errors:", error.message));
 
@@ -542,12 +562,18 @@ app.listen(PORT, () => {
 app.get("/products", async (req, res) => {
     try {
         await inventoryReady;
+        await reviewsReady;
     } catch (error) {
         console.error("Inventory setup failed:", error.message);
         return res.status(503).json({ error: "Products are temporarily unavailable" });
     }
     db.query(
-        "SELECT id, name, price, category, image, description, stock, discount, expiry FROM products ORDER BY id",
+        `SELECT p.id, p.name, p.price, p.category, p.image, p.description, p.stock, p.discount, p.expiry,
+                COALESCE(AVG(r.rating), 0) as rating, COALESCE(COUNT(r.id), 0) as reviews
+         FROM products p
+         LEFT JOIN reviews r ON r.product_id = p.id
+         GROUP BY p.id
+         ORDER BY p.id`,
         (err, result) => {
         if (err) {
             console.error("Products query failed:", err.message);
@@ -556,6 +582,95 @@ app.get("/products", async (req, res) => {
         res.json(result);
         },
     );
+});
+
+app.get("/products/:id/reviews", async (req, res) => {
+    const productId = Number(req.params.id);
+    if (!Number.isInteger(productId) || productId < 1) return res.status(400).json({ error: "Valid product id is required" });
+    try {
+        await inventoryReady;
+        await reviewsReady;
+        const [reviews] = await db.promise().query(
+            `SELECT r.id, r.product_id, r.user_id, u.name as user_name, r.rating, r.comment, r.created_at
+             FROM reviews r
+             JOIN users u ON u.id = r.user_id
+             WHERE r.product_id = ?
+             ORDER BY r.created_at DESC`,
+            [productId]
+        );
+        res.json(reviews.map((row) => ({
+            id: row.id,
+            productId: row.product_id,
+            userId: row.user_id,
+            userName: row.user_name,
+            rating: Number(row.rating) || 0,
+            comment: row.comment || "",
+            createdAt: row.created_at
+        })));
+    } catch (error) {
+        console.error("Fetch reviews failed:", error.message);
+        res.status(503).json({ error: "Could not load reviews" });
+    }
+});
+
+app.get("/products/:id/rating", async (req, res) => {
+    const productId = Number(req.params.id);
+    if (!Number.isInteger(productId) || productId < 1) return res.status(400).json({ error: "Valid product id is required" });
+    try {
+        await inventoryReady;
+        await reviewsReady;
+        const [[stats]] = await db.promise().query(
+            "SELECT AVG(rating) as avg_rating, COUNT(*) as review_count FROM reviews WHERE product_id = ?",
+            [productId]
+        );
+        res.json({
+            productId,
+            avgRating: stats?.avg_rating ? Number(stats.avg_rating) : 0,
+            reviewCount: stats?.review_count ? Number(stats.review_count) : 0
+        });
+    } catch (error) {
+        console.error("Fetch rating failed:", error.message);
+        res.status(503).json({ error: "Could not load rating" });
+    }
+});
+
+app.post("/products/:id/reviews", async (req, res) => {
+    const productId = Number(req.params.id);
+    const body = req.body || {};
+    const userId = Number(body.userId);
+    const rating = Number(body.rating);
+    const comment = String(body.comment || "").trim();
+    if (!Number.isInteger(productId) || productId < 1) return res.status(400).json({ error: "Valid product id is required" });
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "User id is required" });
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) return res.status(400).json({ error: "Rating must be between 1 and 5" });
+    try {
+        await inventoryReady;
+        await reviewsReady;
+        const [[product]] = await db.promise().query("SELECT id FROM products WHERE id = ?", [productId]);
+        if (!product) return res.status(404).json({ error: "Product not found" });
+        const [[existing]] = await db.promise().query("SELECT id FROM reviews WHERE product_id = ? AND user_id = ?", [productId, userId]);
+        if (existing) return res.status(409).json({ error: "You have already reviewed this product" });
+        const [result] = await db.promise().query(
+            "INSERT INTO reviews (product_id, user_id, rating, comment) VALUES (?, ?, ?, ?)",
+            [productId, userId, rating, comment || null]
+        );
+        const [[stats]] = await db.promise().query(
+            "SELECT AVG(rating) as avg_rating, COUNT(*) as review_count FROM reviews WHERE product_id = ?",
+            [productId]
+        );
+        res.status(201).json({
+            id: result.insertId,
+            productId,
+            userId,
+            rating,
+            comment: comment || null,
+            avgRating: Number(stats.avg_rating) || 0,
+            reviewCount: Number(stats.review_count) || 0
+        });
+    } catch (error) {
+        console.error("Create review failed:", error.message);
+        res.status(503).json({ error: "Could not submit review" });
+    }
 });
 
 app.get("/health", (req, res) => {
@@ -1481,22 +1596,27 @@ async function sendSupportEmail({ to, name, phone, orderId, category, message })
 
 app.post("/support", async (req, res) => {
     const body = req.body || {};
-    const name = String(body.name || "").trim();
-    const email = String(body.email || "").trim();
-    const phone = String(body.phone || "").trim() || null;
-    const orderId = String(body.orderId || "").trim() || null;
+    const userId = Number(body.userId);
+    const orderId = String(body.orderId || "").trim();
     const category = String(body.category || "").trim();
     const message = String(body.message || "").trim();
+    const name = String(body.name || "").trim();
+    const email = String(body.email || "").trim();
 
-    if (!name || !email || !category || !message) {
-        return res.status(400).json({ error: "Name, email, category, and message are required" });
+    if (!Number.isInteger(userId) || userId < 1 || !name || !email || !orderId || !category || !message) {
+        return res.status(400).json({ error: "Name, email, Order ID, category, and message are required" });
     }
 
     try {
+        await databaseReady;
+        const [users] = await db.promise().query("SELECT name, email FROM users WHERE id = ?", [userId]);
+        if (!users[0]) return res.status(404).json({ error: "User not found" });
+        const user = users[0];
+
         await supportReady;
         const [result] = await db.promise().query(
             "INSERT INTO support_tickets (name, email, phone, order_id, category, message) VALUES (?, ?, ?, ?, ?, ?)",
-            [name, email, phone, orderId, category, message]
+            [name || user.name, email || user.email, null, orderId, category, message]
         );
 
         let emailSent = false;
@@ -1504,7 +1624,7 @@ app.post("/support", async (req, res) => {
         if (emailTransporter) {
             (async () => {
                 try {
-                    await sendSupportEmail({ to: email, name, phone, orderId, category, message });
+                    await sendSupportEmail({ to: email || user.email, name: name || user.name, phone: null, orderId, category, message });
                     emailSent = true;
                 } catch (err) {
                     emailSent = false;
@@ -1518,9 +1638,9 @@ app.post("/support", async (req, res) => {
 
         res.status(201).json({
             id: result.insertId,
-            name,
-            email,
-            phone,
+            name: name || user.name,
+            email: email || user.email,
+            phone: null,
             orderId,
             category,
             message,
@@ -1530,6 +1650,109 @@ app.post("/support", async (req, res) => {
     } catch (error) {
         console.error("Support ticket creation failed:", error.message);
         res.status(503).json({ error: "Could not submit support request", detail: error.message });
+    }
+});
+
+app.get("/support/user/:email", async (req, res) => {
+    const email = String(req.params.email || "").trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: "Email is required" });
+    try {
+        await supportReady;
+        const [tickets] = await db.promise().query(
+            "SELECT * FROM support_tickets WHERE email = ? ORDER BY created_at DESC",
+            [email]
+        );
+        res.json(tickets);
+    } catch (error) {
+        console.error("User support tickets fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load support tickets" });
+    }
+});
+
+app.get("/support/:id/messages", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ticket id" });
+    try {
+        await supportReady;
+        const [tickets] = await db.promise().query("SELECT * FROM support_tickets WHERE id = ?", [id]);
+        if (!tickets[0]) return res.status(404).json({ error: "Ticket not found" });
+        const ticket = tickets[0];
+        const [replies] = await db.promise().query("SELECT * FROM support_replies WHERE ticket_id = ? ORDER BY created_at ASC", [id]);
+
+        const messages = [{
+            message: ticket.message,
+            is_customer_reply: true,
+            created_at: ticket.created_at
+        }, ...replies];
+
+        res.json(messages);
+    } catch (error) {
+        console.error("Support messages fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load messages" });
+    }
+});
+
+app.post("/support/:id/reply", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ticket id" });
+    const userId = Number(req.body?.userId);
+    const message = String(req.body?.message || "").trim();
+    if (!Number.isInteger(userId) || userId < 1 || !message) return res.status(400).json({ error: "User ID and reply message are required" });
+
+    try {
+        await databaseReady;
+        const [users] = await db.promise().query("SELECT email FROM users WHERE id = ?", [userId]);
+        if (!users[0]) return res.status(404).json({ error: "User not found" });
+        const userEmail = users[0].email;
+
+        await supportReady;
+        const [tickets] = await db.promise().query("SELECT * FROM support_tickets WHERE id = ? AND email = ?", [id, userEmail]);
+        if (!tickets[0]) return res.status(404).json({ error: "Ticket not found or access denied" });
+
+        await db.promise().query("INSERT INTO support_replies (ticket_id, message, is_customer_reply) VALUES (?, ?, ?)", [id, message, true]);
+
+        res.status(201).json({ message: "Reply added" });
+    } catch (error) {
+        console.error("Customer support reply failed:", error.message);
+        res.status(503).json({ error: "Could not add reply" });
+    }
+});
+
+app.post("/support/quick", async (req, res) => {
+    const body = req.body || {};
+    const userId = Number(body.userId);
+    const message = String(body.message || "").trim();
+
+    if (!Number.isInteger(userId) || userId < 1 || !message) {
+        return res.status(400).json({ error: "User ID and message are required" });
+    }
+
+    try {
+        await databaseReady;
+        const [users] = await db.promise().query("SELECT name, email FROM users WHERE id = ?", [userId]);
+        if (!users[0]) return res.status(404).json({ error: "User not found" });
+        const user = users[0];
+
+        await supportReady;
+
+        let orderId = "";
+        try {
+            const [orders] = await db.promise().query("SELECT id FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", [userId]);
+            if (orders[0]) orderId = orders[0].id;
+        } catch {}
+
+        const [result] = await db.promise().query(
+            "INSERT INTO support_tickets (name, email, phone, order_id, category, message) VALUES (?, ?, ?, ?, ?, ?)",
+            [user.name, user.email, null, orderId || null, "other", message]
+        );
+
+        res.status(201).json({
+            id: result.insertId,
+            message: "Quick support request submitted"
+        });
+    } catch (error) {
+        console.error("Quick support creation failed:", error.message);
+        res.status(503).json({ error: "Could not submit quick support request", detail: error.message });
     }
 });
 

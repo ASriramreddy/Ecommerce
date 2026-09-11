@@ -154,7 +154,7 @@
 							<button class="primary-button" id="support-refresh" type="button">Refresh</button>
 						</div>
 					</div>
-					<table class="admin-table"><thead><tr><th>ID</th><th>Customer</th><th>Email</th><th>Category</th><th>Message</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody id="support-list"></tbody></table>
+					<table class="admin-table"><thead><tr><th>ID</th><th>Customer</th><th>Email</th><th>Order ID</th><th>Category</th><th>Message</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody id="support-list"></tbody></table>
 					<p class="admin-error" id="support-error" role="alert"></p>
 
 					<div id="support-ticket-detail" style="margin-top:24px;" hidden>
@@ -210,7 +210,7 @@
 					<form id="coupon-form" class="admin-form">
 						<label>Code<input id="coupon-code-admin" required></label>
 						<label>Discount %<input id="coupon-discount" type="number" min="1" max="100" step="0.01" value="10" required></label>
-						<label>Min order ₹<input id="coupon-min-order" type="number" min="0" step="0.01" value="0" required></label>
+						<label>Min order â‚¹<input id="coupon-min-order" type="number" min="0" step="0.01" value="0" required></label>
 						<label>Max uses<input id="coupon-max-uses" type="number" min="1" step="1"></label>
 						<label>Expires at<input id="coupon-expires" type="datetime-local"></label>
 						<button type="submit" class="primary-button">Create</button>
@@ -233,11 +233,11 @@
 					<p style="margin:0 0 12px;color:var(--adm-muted);font-size:12px;">Create promotional offers that apply discounts to selected products or entire categories. Add a coupon code so customers can apply the offer at checkout.</p>
 					<form id="offer-form" class="admin-form">
 						<div class="admin-field"><label>Offer name<input id="offer-name" required placeholder="e.g. Diwali Sweets Sale"></label></div>
-						<div class="admin-field"><label>Festival<select id="offer-festival"><option value="">— No festival —</option></select></label></div>
+						<div class="admin-field"><label>Festival<select id="offer-festival"><option value="">â€” No festival â€”</option></select></label></div>
 						<div class="admin-field"><label>Discount %<input id="offer-discount" type="number" min="1" max="100" step="0.01" value="10" required></label></div>
 						<div class="admin-field"><label>Coupon code<input id="offer-coupon" placeholder="DIWALI10"></label></div>
 						<div class="admin-field"><label>Image URL<input id="offer-image" placeholder="https://..."></label></div>
-						<div class="admin-field"><label>Min order ₹<input id="offer-min-order" type="number" min="0" step="0.01" value="0" required></label></div>
+						<div class="admin-field"><label>Min order â‚¹<input id="offer-min-order" type="number" min="0" step="0.01" value="0" required></label></div>
 						<div class="admin-field"><label>Start date<input id="offer-start-date" type="date"></label></div>
 						<div class="admin-field"><label>End date<input id="offer-end-date" type="date"></label></div>
 						<div class="admin-field"><label>Status<select id="offer-active"><option value="1" selected>Active</option><option value="0">Inactive</option></select></label></div>
@@ -450,7 +450,7 @@
 
 			async function loadProducts() {
 				const products = await request("/products");
-				list.innerHTML = products.map(product => `<tr><td>${product.image ? `<img src="${product.image}" alt="">` : "-"}</td><td>${product.name}</td><td>₹${Number(product.price).toLocaleString("en-IN")}</td><td>${product.category}</td><td><div class="stock-control"><input type="number" min="0" step="1" value="${Number(product.stock) || 0}" data-stock-input="${product.id}" aria-label="Stock for ${product.name}"><input type="number" min="0" max="100" step="0.01" value="${Number(product.discount) || 0}" data-discount-input="${product.id}" aria-label="Discount for ${product.name}"><button type="button" class="primary-button" data-stock="${product.id}">Save</button></div></td><td>${Number(product.discount) || 0}%</td><td><button class="delete-button" data-id="${product.id}">Delete</button></td></tr>`).join("");
+				list.innerHTML = products.map(product => `<tr><td>${product.image ? `<img src="${product.image}" alt="">` : "-"}</td><td>${product.name}</td><td>â‚¹${Number(product.price).toLocaleString("en-IN")}</td><td>${product.category}</td><td><div class="stock-control"><input type="number" min="0" step="1" value="${Number(product.stock) || 0}" data-stock-input="${product.id}" aria-label="Stock for ${product.name}"><input type="number" min="0" max="100" step="0.01" value="${Number(product.discount) || 0}" data-discount-input="${product.id}" aria-label="Discount for ${product.name}"><button type="button" class="primary-button" data-stock="${product.id}">Save</button></div></td><td>${Number(product.discount) || 0}%</td><td><button class="delete-button" data-id="${product.id}">Delete</button></td></tr>`).join("");
 			}
 
 			async function showDashboard() {
@@ -501,9 +501,9 @@
 						<dt>Address</dt><dd>${escapeHtml(order.address || "-")}</dd>
 						<dt>Status</dt><dd><span class="summary-status">${escapeHtml(order.status || "placed")}</span></dd>
 						<dt>Placed on</dt><dd>${order.created_at ? new Date(order.created_at).toLocaleString() : "-"}</dd>
-						<dt>Delivery</dt><dd>₹${Number(order.delivery_charge || 0).toLocaleString("en-IN")}</dd>
+						<dt>Delivery</dt><dd>â‚¹${Number(order.delivery_charge || 0).toLocaleString("en-IN")}</dd>
 					</dl>
-					<div class="summary-total">Total: ₹${Number(order.total_amount || 0).toLocaleString("en-IN")}</div>
+					<div class="summary-total">Total: â‚¹${Number(order.total_amount || 0).toLocaleString("en-IN")}</div>
 				`;
 			}
 
@@ -581,7 +581,12 @@
 					const data = await request("/admin/login", { method: "POST", body: JSON.stringify({ email: document.querySelector("#admin-email").value, password: document.querySelector("#admin-password").value }) });
 					if (data.token) {
 						localStorage.setItem(tokenKey, data.token);
-						await showDashboard();
+						const redirect = new URLSearchParams(window.location.search).get("redirect");
+						if (redirect) {
+							window.location.href = redirect;
+						} else {
+							await showDashboard();
+						}
 					} else if (data.user) {
 						localStorage.removeItem(tokenKey);
 						localStorage.setItem("sriram-store-user", JSON.stringify(data.user));
@@ -629,7 +634,16 @@
 				} catch (error) { productError.textContent = error.message; button.disabled = false; }
 			});
 
-			if (localStorage.getItem(tokenKey)) showDashboard(); else updateAdminHeader();
+			if (localStorage.getItem(tokenKey)) {
+				const redirect = new URLSearchParams(window.location.search).get("redirect");
+				if (redirect) {
+					window.location.href = redirect;
+				} else {
+					showDashboard();
+				}
+			} else {
+				updateAdminHeader();
+			}
 
 			document.querySelector("#products-tab").addEventListener("click", async () => {
 				document.querySelectorAll(".admin-tabs .tab").forEach((t) => { t.classList.remove("is-active"); t.setAttribute("aria-selected", "false"); });
@@ -664,13 +678,17 @@
 				document.querySelector("#support-tab").classList.add("is-active");
 				document.querySelector("#support-tab").setAttribute("aria-selected", "true");
 				showPanel(supportPanel);
-				await loadSupportTickets();
+				try {
+						await loadSupportTickets();
+				} catch (error) {
+						document.querySelector('#support-error').textContent = error.message;
+				}
 				updateSupportBadge(0);
 			});
 
 			async function loadCoupons() {
 				const coupons = await request("/admin/coupons");
-				document.querySelector("#coupon-list").innerHTML = coupons.map((c) => `<tr><td><strong>${c.code}</strong></td><td>${c.discount_percent}%</td><td>₹${Number(c.min_order_amount).toLocaleString("en-IN")}</td><td>${c.max_uses || "∞"}</td><td>${c.used_count}</td><td>${c.expires_at ? new Date(c.expires_at).toLocaleString() : "Never"}</td><td><span class="admin-status ${c.is_active ? "is-active" : "is-inactive"}">${c.is_active ? "Active" : "Inactive"}</span></td><td><button class="delete-button" data-coupon-code="${c.code}">Delete</button></td></tr>`).join("") || '<tr><td colspan="8" style="text-align:center;color:#999;">No coupons found</td></tr>';
+				document.querySelector("#coupon-list").innerHTML = coupons.map((c) => `<tr><td><strong>${c.code}</strong></td><td>${c.discount_percent}%</td><td>â‚¹${Number(c.min_order_amount).toLocaleString("en-IN")}</td><td>${c.max_uses || "âˆž"}</td><td>${c.used_count}</td><td>${c.expires_at ? new Date(c.expires_at).toLocaleString() : "Never"}</td><td><span class="admin-status ${c.is_active ? "is-active" : "is-inactive"}">${c.is_active ? "Active" : "Inactive"}</span></td><td><button class="delete-button" data-coupon-code="${c.code}">Delete</button></td></tr>`).join("") || '<tr><td colspan="8" style="text-align:center;color:#999;">No coupons found</td></tr>';
 			}
 
 			async function loadSupportTickets() {
@@ -678,12 +696,12 @@
 				const url = statusFilter ? `/admin/support?status=${encodeURIComponent(statusFilter)}` : "/admin/support";
 				const tickets = await request(url);
 				const list = document.querySelector("#support-list");
-				if (!tickets.length) {
-					list.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">No support tickets found</td></tr>';
+				if (!tickets || !tickets.length) {
+					list.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">No support tickets found</td></tr>';
 					updateSupportBadge(0);
 					return;
 				}
-				list.innerHTML = tickets.map((t) => `<tr data-ticket-id="${t.id}" style="cursor:pointer;"><td>${t.id}</td><td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.email)}</td><td>${escapeHtml(t.category)}</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(t.message)}</td><td><span class="admin-status ${t.status === "open" ? "is-active" : t.status === "closed" ? "is-inactive" : "is-active"}">${t.status.replace("_", " ")}</span></td><td>${new Date(t.created_at).toLocaleString()}</td><td><button class="delete-button" data-view-ticket="${t.id}" type="button">View</button></td></tr>`).join("");
+				list.innerHTML = tickets.map((t) => `<tr data-ticket-id="${t.id}" style="cursor:pointer;"><td>${t.id}</td><td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.email)}</td><td>${escapeHtml(t.order_id || "-")}</td><td>${escapeHtml(t.category)}</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(t.message)}</td><td><span class="admin-status ${t.status === "open" ? "is-active" : t.status === "closed" ? "is-inactive" : "is-active"}">${t.status.replace("_", " ")}</span></td><td>${new Date(t.created_at).toLocaleString()}</td><td><button class="delete-button" data-view-ticket="${t.id}" type="button">View</button></td></tr>`).join("");
 				updateSupportBadge(tickets.filter((t) => t.status === "open").length);
 			}
 
@@ -698,7 +716,7 @@
 			async function loadSupportReplies(ticketId) {
 				const replies = await request(`/admin/support/${ticketId}/replies`);
 				const container = document.querySelector("#support-replies");
-				if (!replies.length) {
+				if (!replies || !replies.length) {
 					container.innerHTML = '<p style="margin:0;color:var(--adm-muted);font-size:12px;">No replies yet</p>';
 					return;
 				}
@@ -708,8 +726,8 @@
 			function showTicketDetail(ticket) {
 				document.querySelector("#detail-name").textContent = ticket.name;
 				document.querySelector("#detail-email").textContent = ticket.email;
-				document.querySelector("#detail-phone").textContent = ticket.phone || "—";
-				document.querySelector("#detail-order").textContent = ticket.order_id || "—";
+				document.querySelector("#detail-phone").textContent = ticket.phone || "â€”";
+				document.querySelector("#detail-order").textContent = ticket.order_id || "â€”";
 				document.querySelector("#detail-category").textContent = ticket.category;
 				document.querySelector("#detail-status").textContent = ticket.status.replace("_", " ");
 				document.querySelector("#detail-created").textContent = new Date(ticket.created_at).toLocaleString();
@@ -814,9 +832,9 @@
 
 			async function loadFestivals() {
 				const festivals = await request("/admin/festivals");
-				festivalListEl.innerHTML = festivals.map((f) => `<tr><td>${f.id}</td><td>${escapeHtml(f.name)}</td><td>${f.image_url ? `<img src="${escapeHtml(f.image_url)}" style="height:40px;width:auto;border-radius:4px;border:1px solid var(--adm-line);">` : '<span style="color:var(--adm-muted);">—</span>'}</td><td>${new Date(f.created_at).toLocaleDateString()}</td><td><button class="delete-button" data-festival-id="${f.id}" type="button">Delete</button></td></tr>`).join("") || '<tr><td colspan="5" style="text-align:center;color:#999;">No festivals yet</td></tr>';
+				festivalListEl.innerHTML = festivals.map((f) => `<tr><td>${f.id}</td><td>${escapeHtml(f.name)}</td><td>${f.image_url ? `<img src="${escapeHtml(f.image_url)}" style="height:40px;width:auto;border-radius:4px;border:1px solid var(--adm-line);">` : '<span style="color:var(--adm-muted);">â€”</span>'}</td><td>${new Date(f.created_at).toLocaleDateString()}</td><td><button class="delete-button" data-festival-id="${f.id}" type="button">Delete</button></td></tr>`).join("") || '<tr><td colspan="5" style="text-align:center;color:#999;">No festivals yet</td></tr>';
 				const previous = offerFestivalSelect.value;
-				offerFestivalSelect.innerHTML = '<option value="">— No festival —</option>' + festivals.map((f) => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join("");
+				offerFestivalSelect.innerHTML = '<option value="">â€” No festival â€”</option>' + festivals.map((f) => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join("");
 				offerFestivalSelect.value = previous;
 			}
 
@@ -829,26 +847,26 @@
 				const parts = [];
 				if (offer.categories?.length) parts.push(`Categories: ${offer.categories.map(escapeHtml).join(", ")}`);
 				if (offer.product_names?.length) parts.push(`Products: ${offer.product_names.map(escapeHtml).join(", ")}`);
-				return parts.length ? parts.join("<br>") : '<span style="color:var(--adm-muted);">—</span>';
+				return parts.length ? parts.join("<br>") : '<span style="color:var(--adm-muted);">â€”</span>';
 			}
 
 			function renderWindow(offer) {
 				if (!offer.start_date && !offer.end_date) return '<span style="color:var(--adm-muted);">Always</span>';
 				const fmt = (d) => new Date(d).toLocaleDateString();
-				return `${offer.start_date ? fmt(offer.start_date) : "Open"} → ${offer.end_date ? fmt(offer.end_date) : "Open"}`;
+				return `${offer.start_date ? fmt(offer.start_date) : "Open"} â†’ ${offer.end_date ? fmt(offer.end_date) : "Open"}`;
 			}
 
 			async function loadOffers() {
 				const offers = await request("/admin/offers");
 				offerListEl.innerHTML = offers.map((o) => `<tr>
 					<td><strong>${escapeHtml(o.name)}</strong></td>
-					<td>${o.festival_name ? escapeHtml(o.festival_name) : '<span style="color:var(--adm-muted);">—</span>'}</td>
-					<td>${o.coupon_code ? `<code>${escapeHtml(o.coupon_code)}</code>` : '<span style="color:var(--adm-muted);">—</span>'}</td>
+					<td>${o.festival_name ? escapeHtml(o.festival_name) : '<span style="color:var(--adm-muted);">â€”</span>'}</td>
+					<td>${o.coupon_code ? `<code>${escapeHtml(o.coupon_code)}</code>` : '<span style="color:var(--adm-muted);">â€”</span>'}</td>
 					<td>${Number(o.discount_percent)}%</td>
-					<td>₹${Number(o.min_order_amount).toLocaleString("en-IN")}</td>
+					<td>â‚¹${Number(o.min_order_amount).toLocaleString("en-IN")}</td>
 					<td style="max-width:260px;font-size:12px;">${renderScopeCell(o)}</td>
 					<td style="font-size:12px;">${renderWindow(o)}</td>
-					<td>${o.image_url ? `<img src="${escapeHtml(o.image_url)}" style="height:40px;width:auto;border-radius:4px;border:1px solid var(--adm-line);">` : '<span style="color:var(--adm-muted);">—</span>'}</td>
+					<td>${o.image_url ? `<img src="${escapeHtml(o.image_url)}" style="height:40px;width:auto;border-radius:4px;border:1px solid var(--adm-line);">` : '<span style="color:var(--adm-muted);">â€”</span>'}</td>
 					<td><span class="admin-status ${o.is_active ? "is-active" : "is-inactive"}">${o.is_active ? "Active" : "Inactive"}</span><br><button class="delete-button" data-toggle-offer="${o.id}" type="button" style="margin-top:6px;">${o.is_active ? "Deactivate" : "Activate"}</button></td>
 					<td>
 						<button class="delete-button" data-edit-offer="${o.id}" type="button">Edit</button>
