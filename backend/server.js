@@ -118,6 +118,15 @@ async function sendOrderEmail({ to, name, id, items, subtotal, discount, totalAm
 const app = express();
 const adminTokens = new Set();
 
+function parseProductIds(value) {
+    try {
+        const ids = JSON.parse(value || "[]");
+        return Array.isArray(ids) ? ids.map(Number).filter((id) => Number.isInteger(id) && id > 0) : [];
+    } catch {
+        return [];
+    }
+}
+
 const uploadDirectory = path.join(__dirname, "..", "public", "images", "uploads");
 
 fs.mkdirSync(uploadDirectory, { recursive: true });
@@ -292,7 +301,8 @@ const ordersReady = databaseReady.then(async () => {
             address TEXT NOT NULL,
             delivery_charge DECIMAL(10,2) NOT NULL DEFAULT 0,
             Total_Amount DECIMAL(10,2) NOT NULL DEFAULT 0,
-            status ENUM('placed','processing','shipped','delivered','cancelled','returned') NOT NULL DEFAULT 'placed',
+            status ENUM('placed','packed','shipped','out_for_delivery','delivered','processing','cancelled','returned') NOT NULL DEFAULT 'placed',
+            product_ids TEXT NULL,
             coupon_code VARCHAR(50) NULL,
             coupon_discount DECIMAL(10,2) NOT NULL DEFAULT 0,
             discount DECIMAL(10,2) NOT NULL DEFAULT 0,
@@ -311,8 +321,8 @@ const ordersReady = databaseReady.then(async () => {
     const [statusCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'status'");
     if (statusCols.length) {
         const type = statusCols[0].Type || "";
-        if (!type.includes("returned")) {
-            await dbPromise.query("ALTER TABLE orders MODIFY COLUMN status ENUM('placed','processing','shipped','delivered','cancelled','returned') NOT NULL DEFAULT 'placed'");
+        if (!type.includes("out_for_delivery") || !type.includes("packed")) {
+            await dbPromise.query("ALTER TABLE orders MODIFY COLUMN status ENUM('placed','packed','shipped','out_for_delivery','delivered','processing','cancelled','returned') NOT NULL DEFAULT 'placed'");
         }
     }
     const [couponCodeCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'coupon_code'");
@@ -326,6 +336,10 @@ const ordersReady = databaseReady.then(async () => {
     const [discountCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'discount'");
     if (!discountCols.length) {
         await dbPromise.query("ALTER TABLE orders ADD COLUMN discount DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER coupon_discount");
+    }
+    const [productIdsCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'product_ids'");
+    if (!productIdsCols.length) {
+        await dbPromise.query("ALTER TABLE orders ADD COLUMN product_ids TEXT NULL AFTER status");
     }
     console.log("✅ Orders table is ready");
 }).catch((error) => {
@@ -510,6 +524,22 @@ const supportReady = databaseReady.then(async () => {
     throw error;
 });
 
+const notificationsReady = databaseReady.then(async () => {
+    await db.promise().query(`
+        CREATE TABLE IF NOT EXISTS user_notifications (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            message VARCHAR(500) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `);
+    console.log("✅ User notifications table is ready");
+}).catch((error) => {
+    console.error("❌ User notifications table setup failed:", error.message);
+    throw error;
+});
+
 const reviewsReady = databaseReady.then(async () => {
     const dbPromise = db.promise();
     await dbPromise.query(`
@@ -530,7 +560,7 @@ const reviewsReady = databaseReady.then(async () => {
     throw error;
 });
 
-Promise.all([inventoryReady, profilesReady, ordersReady, deliveryChargesReady, couponsReady, festivalsReady, offersReady, supportReady, reviewsReady])
+Promise.all([inventoryReady, profilesReady, ordersReady, deliveryChargesReady, couponsReady, festivalsReady, offersReady, supportReady, notificationsReady, reviewsReady])
     .then(() => console.log("✅ All tables are ready"))
     .catch((error) => console.error("❌ Schema setup encountered errors:", error.message));
 
@@ -648,6 +678,13 @@ app.post("/products/:id/reviews", async (req, res) => {
         await reviewsReady;
         const [[product]] = await db.promise().query("SELECT id FROM products WHERE id = ?", [productId]);
         if (!product) return res.status(404).json({ error: "Product not found" });
+        await ordersReady;
+        const [deliveredOrders] = await db.promise().query(
+            "SELECT product_ids FROM orders WHERE user_id = ? AND status = 'delivered'",
+            [userId]
+        );
+        const purchasedAfterDelivery = deliveredOrders.some((order) => parseProductIds(order.product_ids).includes(productId));
+        if (!purchasedAfterDelivery) return res.status(403).json({ error: "You can review products after delivery" });
         const [result] = await db.promise().query(
             "INSERT INTO reviews (product_id, user_id, rating, comment) VALUES (?, ?, ?, ?)",
             [productId, userId, rating, comment || null]
@@ -799,6 +836,38 @@ function requireAdmin(req, res, next) {
     next();
 }
 
+async function createUserNotification(userId, message) {
+    const id = Number(userId);
+    if (!Number.isInteger(id) || id < 1 || !message) return;
+    await notificationsReady;
+    await db.promise().query(
+        "INSERT INTO user_notifications (user_id, message) VALUES (?, ?)",
+        [id, String(message).slice(0, 500)]
+    );
+}
+
+async function createUserNotificationByEmail(email, message) {
+    await databaseReady;
+    const [[user]] = await db.promise().query("SELECT id FROM users WHERE email = ?", [String(email || "").trim().toLowerCase()]);
+    if (user) await createUserNotification(user.id, message);
+}
+
+app.get("/notifications", async (req, res) => {
+    const userId = Number(req.query.userId);
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    try {
+        await notificationsReady;
+        const [rows] = await db.promise().query(
+            "SELECT id, message, created_at FROM user_notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
+            [userId]
+        );
+        res.json(rows);
+    } catch (error) {
+        console.error("User notifications fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load notifications" });
+    }
+});
+
 app.get("/admin/customers", requireAdmin, async (req, res) => {
     try {
         await databaseReady;
@@ -836,12 +905,15 @@ app.get("/admin/orders", requireAdmin, async (req, res) => {
 app.patch("/admin/orders/:id/status", requireAdmin, async (req, res) => {
     const id = String(req.params.id || "").trim();
     const status = String(req.body?.status || "").trim();
-    const allowed = ["placed", "processing", "shipped", "delivered", "cancelled", "returned"];
+    const allowed = ["placed", "packed", "shipped", "out_for_delivery", "delivered", "processing", "cancelled", "returned"];
     if (!id || !allowed.includes(status)) return res.status(400).json({ error: "Valid order id and status are required" });
     try {
         await ordersReady;
+        const [[order]] = await db.promise().query("SELECT user_id FROM orders WHERE id = ?", [id]);
+        if (!order) return res.status(404).json({ error: "Order not found" });
         const [result] = await db.promise().query("UPDATE orders SET status = ? WHERE id = ?", [status, id]);
         if (!result.affectedRows) return res.status(404).json({ error: "Order not found" });
+        await createUserNotification(order.user_id, `Order ${id} status updated to ${status}.`);
         res.json({ id, status });
     } catch (error) {
         console.error("Order status update failed:", error.message);
@@ -905,6 +977,7 @@ app.delete("/orders/:id", async (req, res) => {
         await ordersReady;
         const [result] = await db.promise().query("DELETE FROM orders WHERE id = ? AND user_id = ?", [id, userId]);
         if (!result.affectedRows) return res.status(404).json({ error: "Order not found or not owned by this user" });
+        await createUserNotification(userId, `Order ${id} was cancelled.`);
         res.json({ id, deleted: true });
     } catch (error) {
         console.error("Order deletion failed:", error.message);
@@ -929,7 +1002,7 @@ app.get("/orders", async (req, res) => {
     try {
         await ordersReady;
         const [rows] = await db.promise().query(
-            "SELECT id, user_id, items, address, delivery_charge, Total_Amount, status, coupon_code, coupon_discount, discount, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC",
+            "SELECT id, user_id, items, address, delivery_charge, Total_Amount, status, product_ids, coupon_code, coupon_discount, discount, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC",
             [userId]
         );
         res.json(rows.map((row) => ({
@@ -943,6 +1016,7 @@ app.get("/orders", async (req, res) => {
             couponCode: row.coupon_code || null,
             couponDiscount: Number(row.coupon_discount) || 0,
             discount: Number(row.discount) || 0,
+            productIds: parseProductIds(row.product_ids),
             createdAt: row.created_at
         })));
     } catch (error) {
@@ -965,6 +1039,7 @@ app.patch("/orders/:id", async (req, res) => {
         if (order.user_id !== userId) return res.status(403).json({ error: "You can only update your own orders" });
         if (returnRequested) {
             await db.promise().query("UPDATE orders SET status = ? WHERE id = ?", ["returned", id]);
+            await createUserNotification(userId, `Return requested for order ${id}.`);
             res.json({ id, status: "returned" });
         } else {
             await db.promise().query("UPDATE orders SET address = ? WHERE id = ?", [address, id]);
@@ -1023,6 +1098,7 @@ app.post("/admin/products", requireAdmin, async (req, res) => {
     const description = String(body.description || "").trim() || null;
     const stock = Number(body.stock);
     const discount = Number(body.discount || 0);
+    const productIds = Array.isArray(body.productIds) ? body.productIds.map(Number).filter((id) => Number.isInteger(id) && id > 0) : [];
     const expiry = body.expiry ? String(body.expiry).trim() : null;
     if (!name || !Number.isFinite(price) || price < 0 || !category || !Number.isInteger(stock) || stock < 0 || !Number.isFinite(discount) || discount < 0 || discount > 100) return res.status(400).json({ error: "Enter valid product, stock, and discount values" });
     try {
@@ -1340,6 +1416,7 @@ app.post("/admin/support/:id/replies", requireAdmin, async (req, res) => {
         const [tickets] = await db.promise().query("SELECT * FROM support_tickets WHERE id = ?", [id]);
         if (!tickets[0]) return res.status(404).json({ error: "Ticket not found" });
         await db.promise().query("INSERT INTO support_replies (ticket_id, message, is_customer_reply) VALUES (?, ?, ?)", [id, message, false]);
+        await createUserNotificationByEmail(tickets[0].email, `Support replied to ticket #${id}.`);
         res.status(201).json({ message: "Reply added" });
     } catch (error) {
         console.error("Admin support reply failed:", error.message);
@@ -1356,6 +1433,8 @@ app.patch("/admin/support/:id", requireAdmin, async (req, res) => {
         await supportReady;
         const [result] = await db.promise().query("UPDATE support_tickets SET status = ? WHERE id = ?", [status, id]);
         if (!result.affectedRows) return res.status(404).json({ error: "Ticket not found" });
+        const [[ticket]] = await db.promise().query("SELECT email FROM support_tickets WHERE id = ?", [id]);
+        if (ticket) await createUserNotificationByEmail(ticket.email, `Support ticket #${id} status updated to ${status}.`);
         res.json({ message: "Ticket updated" });
     } catch (error) {
         console.error("Admin support update failed:", error.message);
@@ -1792,8 +1871,8 @@ app.post("/orders", async (req, res) => {
 
         // 1. SAVE ORDER
         await db.promise().query(
-    "INSERT INTO orders (id, user_id, items, address, delivery_charge, Total_Amount, coupon_code, coupon_discount, discount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [id, userId, items, address, deliveryCharge, totalAmount, couponCode || null, discount, discount]
+    "INSERT INTO orders (id, user_id, items, address, delivery_charge, Total_Amount, status, product_ids, coupon_code, coupon_discount, discount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [id, userId, items, address, deliveryCharge, totalAmount, "placed", JSON.stringify(productIds), couponCode || null, discount, discount]
 );
 
         // 2. GET USER EMAIL
@@ -1806,40 +1885,37 @@ console.log("USER EMAIL:", user?.email);
 
         console.log(`[ORDERS] User lookup result:`, user);
 
-        // 3. SEND ORDER CONFIRMATION EMAIL (fire-and-forget so the response is fast)
-        let emailSent = !!(emailTransporter && user && user.email);
-        let emailError = !emailSent
-            ? (!emailTransporter
-                ? "Email transporter not configured on server. Check EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env"
-                : "User has no email on file")
-            : null;
+        // 3. SEND ORDER CONFIRMATION EMAIL before responding so the result is accurate.
+        let emailSent = false;
+        let emailError = null;
         if (emailTransporter && user && user.email) {
-            (async () => {
-                try {
-                    const info = await sendOrderEmail({
-                        to: user.email,
-                        name: user.name,
-                        id,
-                        items,
-                        subtotal,
-                        discount,
-                        totalAmount,
-                        deliveryCharge,
-                        address,
-                        couponCode
-                    });
-                    const actualRecipient = user.email;
-                    const ccNote = ORDER_NOTIFICATION_EMAIL && ORDER_NOTIFICATION_EMAIL.toLowerCase() !== user.email.toLowerCase()
-                        ? ` (cc: ${ORDER_NOTIFICATION_EMAIL})`
-                        : "";
-                    console.log(`[ORDERS] Confirmation email sent. FROM: ${EMAIL_USER} -> TO: ${actualRecipient}${ccNote}. messageId=${info && info.messageId}`);
-                } catch (err) {
-                    console.error("[ORDERS] Order confirmation email failed:", err.message);
-                }
-            })();
-        } else if (!emailTransporter) {
-            console.error("[ORDERS]", emailError);
+            try {
+                const info = await sendOrderEmail({
+                    to: user.email,
+                    name: user.name,
+                    id,
+                    items,
+                    subtotal,
+                    discount,
+                    totalAmount,
+                    deliveryCharge,
+                    address,
+                    couponCode
+                });
+                emailSent = true;
+                const actualRecipient = user.email;
+                const ccNote = ORDER_NOTIFICATION_EMAIL && ORDER_NOTIFICATION_EMAIL.toLowerCase() !== user.email.toLowerCase()
+                    ? ` (cc: ${ORDER_NOTIFICATION_EMAIL})`
+                    : "";
+                console.log(`[ORDERS] Confirmation email sent. FROM: ${EMAIL_USER} -> TO: ${actualRecipient}${ccNote}. messageId=${info && info.messageId}`);
+            } catch (err) {
+                emailError = `Order confirmation email failed: ${err.message}`;
+                console.error("[ORDERS]", emailError);
+            }
         } else {
+            emailError = !emailTransporter
+                ? "Email transporter not configured on server. Check EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env"
+                : "User has no email on file";
             console.warn("[ORDERS]", emailError);
         }
 

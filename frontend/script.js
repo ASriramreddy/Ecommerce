@@ -112,6 +112,58 @@ function renderNotifications() {
   });
 }
 
+let serverNotificationTimer = null;
+let orderRefreshTimer = null;
+
+async function loadServerNotifications() {
+  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+  if (!user?.id) return;
+  try {
+    const response = await fetch(`${API_URL}/notifications?userId=${encodeURIComponent(user.id)}`);
+    if (!response.ok) return;
+    const serverNotifications = await response.json();
+    if (!Array.isArray(serverNotifications)) return;
+    const existingNotifications = getNotifications();
+    const localNotifications = existingNotifications.filter((notification) => !String(notification.id).startsWith("server-"));
+    const readServerNotifications = new Map(
+      existingNotifications
+        .filter((notification) => String(notification.id).startsWith("server-") && notification.read)
+        .map((notification) => [String(notification.id), true])
+    );
+    const merged = serverNotifications.map((notification) => ({
+      id: `server-${notification.id}`,
+      message: notification.message,
+      time: notification.created_at,
+      read: readServerNotifications.has(`server-${notification.id}`)
+    }));
+    localStorage.setItem(notificationsStorageKey, JSON.stringify([...merged, ...localNotifications].slice(0, 50)));
+    renderNotifications();
+  } catch (error) {
+    console.error("Could not load user notifications:", error.message);
+  }
+}
+
+function startServerNotificationPolling() {
+  if (serverNotificationTimer) clearInterval(serverNotificationTimer);
+  loadServerNotifications();
+  serverNotificationTimer = setInterval(loadServerNotifications, 15000);
+}
+
+function stopServerNotificationPolling() {
+  if (serverNotificationTimer) clearInterval(serverNotificationTimer);
+  serverNotificationTimer = null;
+}
+
+function startOrderRefresh() {
+  if (orderRefreshTimer) clearInterval(orderRefreshTimer);
+  orderRefreshTimer = setInterval(renderOrders, 15000);
+}
+
+function stopOrderRefresh() {
+  if (orderRefreshTimer) clearInterval(orderRefreshTimer);
+  orderRefreshTimer = null;
+}
+
 function getEstimatedDeliveryDays() {
   if (!selectedState) return 3;
   return getEstimatedDeliveryDaysForState(selectedState);
@@ -215,6 +267,29 @@ async function submitReview(productId) {
   }
 }
 
+async function submitRatingFromOrderDetails(productId, rating, comment) {
+  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+  if (!user?.id) return showToast("Please sign in to review", false);
+  try {
+    const response = await fetch(`${API_URL}/products/${productId}/reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: user.id, rating, comment })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not submit rating");
+    showToast("Rating submitted successfully");
+    const ratingForm = document.querySelector(`.order-product-rating[data-product-id="${productId}"] .rating-form`);
+    if (ratingForm) {
+      ratingForm.innerHTML = '<div class="rating-submitted">Thank you for your rating!</div>';
+    }
+    await loadProductReviews(productId);
+    await loadProducts();
+  } catch (error) {
+    showToast(error.message, false);
+  }
+}
+
 function showOrderSuccess({ orderId, items, subtotal, discount, total, delivery, couponCode, emailSent, email }) {
   const modal = document.querySelector("#order-success-modal");
   if (!modal) {
@@ -272,8 +347,12 @@ function setAuthenticated(user) {
     loadProducts();
     renderOrders();
     renderNotifications();
+    startServerNotificationPolling();
+    startOrderRefresh();
     return;
   }
+  stopServerNotificationPolling();
+  stopOrderRefresh();
   localStorage.removeItem(authStorageKey);
   document.body.classList.add("auth-locked");
   authModal.setAttribute("aria-hidden", "false");
@@ -550,14 +629,40 @@ function closeModal(modal) {
 }
 
 function statusLabel(status) {
-  const map = { placed: "Placed", processing: "Processing", shipped: "Shipped", delivered: "Delivered", cancelled: "Cancelled", returned: "Returned" };
-  return map[status] || "Placed";
+  const normalizedStatus = String(status || "placed").toLowerCase();
+  const map = { placed: "Order", packed: "Packed", processing: "Processing", shipped: "Shipped", out_for_delivery: "Out for Delivery", delivered: "Delivered", cancelled: "Cancelled", returned: "Returned", "return requested": "Return Requested" };
+  return map[normalizedStatus] || "Order";
+}
+
+function renderOrderTracking(status) {
+  const normalizedStatus = String(status || "placed").toLowerCase();
+  const tracking = document.querySelector("#order-tracking");
+  if (!tracking) return;
+  if (["cancelled", "returned", "return requested"].includes(normalizedStatus)) {
+    tracking.innerHTML = `<span class="tracking-terminal is-${normalizedStatus.replace(/\s+/g, "-")}">${statusLabel(normalizedStatus)}</span>`;
+    return;
+  }
+  const steps = [
+    { value: "placed", label: "Order" },
+    { value: "packed", label: "Packed" },
+    { value: "shipped", label: "Shipped" },
+    { value: "out_for_delivery", label: "Out for Delivery" },
+    { value: "delivered", label: "Delivered" }
+  ];
+  const currentIndex = Math.max(0, steps.findIndex((step) => step.value === normalizedStatus));
+  if (normalizedStatus === "processing") steps[0].label = "Processing";
+  tracking.innerHTML = steps.map((step, index) => `
+    <span class="tracking-step ${index < currentIndex ? "is-complete" : ""} ${index === currentIndex ? "is-current" : ""}">
+      ${step.label}
+    </span>
+  `).join("");
 }
 
 function paintOrders(orders) {
   const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
   ordersList.innerHTML = orders.length ? orders.map((order) => {
     const status = order.status || "placed";
+    const productIds = Array.isArray(order.productIds) ? order.productIds : (order.lineItems || []).map((item) => Number(item.id)).filter(Boolean);
     const isFinal = ["cancelled", "returned", "delivered"].includes(status);
     const isReturned = status === "returned";
     const isCancelled = status === "cancelled";
@@ -596,6 +701,7 @@ async function renderOrders() {
             couponDiscount: serverOrder.couponDiscount || local?.couponDiscount,
             discount: serverOrder.discount || local?.discount,
             lineItems: local?.lineItems,
+            productIds: serverOrder.productIds || local?.productIds || [],
             orderTotal: serverOrder.totalAmount
           };
         });
@@ -603,6 +709,7 @@ async function renderOrders() {
         const all = [...merged, ...localOnly];
         localStorage.setItem(ordersStorageKey, JSON.stringify(all.map((o) => ({ ...o, status: o.status || "placed" }))));
         paintOrders(all);
+        refreshOpenOrderDetails(all);
         return;
       }
     } catch (error) {
@@ -610,6 +717,16 @@ async function renderOrders() {
     }
   }
   paintOrders(localOrders);
+  refreshOpenOrderDetails(localOrders);
+}
+
+function refreshOpenOrderDetails(orders) {
+  if (!orderDetailsModal.classList.contains("open")) return;
+  const order = orders.find((item) => String(item.id) === String(orderDetailsModal.dataset.orderId));
+  if (!order) return;
+  const status = order.status || "placed";
+  document.querySelector("#order-details-status").textContent = statusLabel(status);
+  renderOrderTracking(status);
 }
 
 async function openCheckout() {
@@ -804,6 +921,14 @@ async function loadProducts() {
 
 let festivalOffers = [];
 let activeOffer = null;
+let couponRefreshTimer = null;
+
+function startCouponRefresh() {
+  if (couponRefreshTimer) clearInterval(couponRefreshTimer);
+  couponRefreshTimer = setInterval(() => {
+    loadAvailableCoupons();
+  }, 15000);
+}
 
 async function loadOffers() {
   try {
@@ -815,6 +940,7 @@ async function loadOffers() {
   }
   renderOfferBanner();
   loadAvailableCoupons();
+  startCouponRefresh();
   syncActiveOffer();
   renderCart();
 }
@@ -944,7 +1070,7 @@ async function openOrderDetails(orderId) {
       const serverOrders = await response.json().catch(() => []);
       if (response.ok && Array.isArray(serverOrders)) {
         const serverOrder = serverOrders.find((o) => o.id === orderId);
-        if (serverOrder) order = { ...order, ...serverOrder, orderTotal: serverOrder.totalAmount };
+        if (serverOrder) order = { ...order, ...serverOrder, productIds: serverOrder.productIds || order?.productIds || [], orderTotal: serverOrder.totalAmount };
       }
     } catch (error) {
       console.error("Could not refresh order:", error.message);
@@ -956,6 +1082,37 @@ async function openOrderDetails(orderId) {
   const discount = Number(order.discount || order.couponDiscount || 0);
   document.querySelector("#order-details-id").textContent = order.id;
   document.querySelector("#order-details-status").textContent = statusLabel(order.status || "placed");
+  renderOrderTracking(order.status || "placed");
+  const rateActions = document.querySelector("#order-rate-actions");
+  const orderProductIds = Array.isArray(order.productIds) ? order.productIds : [];
+  if (rateActions) {
+    if (order.status === "delivered") {
+      const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+      rateActions.innerHTML = orderProductIds.map((productId) => {
+        const product = productById(productId);
+        const productName = product?.name || "Product";
+        return `
+          <div class="order-product-rating" data-product-id="${productId}">
+            <h4>${escapeHtml(productName)}</h4>
+            <div class="rating-form" data-product-id="${productId}">
+              <div class="star-rating-input" data-product-id="${productId}">
+                <button type="button" data-rating="1" aria-label="1 star">★</button>
+                <button type="button" data-rating="2" aria-label="2 stars">★</button>
+                <button type="button" data-rating="3" aria-label="3 stars">★</button>
+                <button type="button" data-rating="4" aria-label="4 stars">★</button>
+                <button type="button" data-rating="5" aria-label="5 stars">★</button>
+              </div>
+              <textarea rows="2" placeholder="Share your experience with this product..." data-review-comment="${productId}"></textarea>
+              <button class="primary-button submit-rating" type="button" data-submit-rating="${productId}" ${user?.id ? "" : "disabled"}>Submit Rating</button>
+              ${!user?.id ? '<small class="rating-login-hint">Sign in to submit a rating</small>' : ""}
+            </div>
+          </div>
+        `;
+      }).join("");
+    } else {
+      rateActions.innerHTML = "";
+    }
+  }
   document.querySelector("#order-details-items").textContent = `${order.items} item${order.items === 1 ? "" : "s"}`;
   const couponEl = document.querySelector("#order-details-coupon");
   const discountEl = document.querySelector("#order-details-discount");
@@ -1003,11 +1160,12 @@ ordersList.addEventListener("click", async (event) => {
     const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
     if (user?.id) {
       try {
-        await fetch(`${API_URL}/orders/${encodeURIComponent(orderId)}`, {
+        const response = await fetch(`${API_URL}/orders/${encodeURIComponent(orderId)}`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ userId: user.id }),
         });
+        if (response.ok) await loadServerNotifications();
       } catch (error) {
         console.error("Cancel order on server failed:", error.message);
       }
@@ -1040,6 +1198,27 @@ ordersList.addEventListener("click", async (event) => {
   const viewOrder = event.target.closest("[data-view-order]");
   if (viewOrder) openOrderDetails(viewOrder.dataset.viewOrder);
 });
+orderDetailsModal.addEventListener("click", (event) => {
+    const starButton = event.target.closest(".star-rating-input button[data-rating]");
+    if (starButton) {
+      const productId = Number(starButton.closest(".star-rating-input").dataset.productId);
+      const rating = Number(starButton.dataset.rating);
+      document.querySelectorAll(`.star-rating-input[data-product-id="${productId}"] button`).forEach((btn, idx) => {
+        btn.classList.toggle("is-active", idx < rating);
+      });
+      return;
+    }
+    const submitButton = event.target.closest(".submit-rating");
+    if (submitButton) {
+      const productId = Number(submitButton.dataset.submitRating);
+      const rating = document.querySelector(`.star-rating-input[data-product-id="${productId}"] button.is-active`);
+      const ratingValue = rating ? Number(rating.dataset.rating) : 0;
+      const comment = document.querySelector(`textarea[data-review-comment="${productId}"]`)?.value?.trim() || "";
+      if (!ratingValue) return showToast("Please select a rating", false);
+      submitRatingFromOrderDetails(productId, ratingValue, comment);
+      return;
+    }
+  });
 orderDetailsModal.querySelectorAll("[data-close-order-details]").forEach((element) => element.addEventListener("click", () => closeModal(orderDetailsModal)));
 document.querySelector("#request-return").addEventListener("click", async () => {
   const orderId = orderDetailsModal.dataset.orderId;
@@ -1050,18 +1229,20 @@ document.querySelector("#request-return").addEventListener("click", async () => 
     order.status = "Return requested";
     localStorage.setItem(ordersStorageKey, JSON.stringify(orders));
   }
-  document.querySelector("#order-details-status").textContent = "Return requested";
+  document.querySelector("#order-details-status").textContent = statusLabel("return requested");
+  renderOrderTracking("return requested");
   renderOrders();
   closeModal(orderDetailsModal);
   showToast("Return request submitted");
   const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
   if (user?.id) {
     try {
-      await fetch(`${API_URL}/orders/${encodeURIComponent(orderId)}`, {
+      const response = await fetch(`${API_URL}/orders/${encodeURIComponent(orderId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user.id, address: order?.address || "", returnRequested: true }),
       });
+      if (response.ok) await loadServerNotifications();
     } catch (error) {
       console.error("Return request failed:", error.message);
     }
@@ -1229,8 +1410,15 @@ async function loadAvailableCoupons() {
       .filter((o) => o.coupon_code)
       .map((o) => ({ code: o.coupon_code, discount_percent: Number(o.discount_percent), min_order_amount: Number(o.min_order_amount || 0), fromOffer: true }));
     const subtotal = cart.reduce((sum, item) => sum + finalPrice(productById(item.id)) * item.quantity, 0);
-    const validCoupons = [...coupons, ...offerCodes].filter((c) => subtotal >= Number(c.min_order_amount || 0));
-    const html = validCoupons.length ? validCoupons.map((c) => `<button class="coupon-chip" type="button" data-coupon-chip="${escapeHtml(c.code)}">${escapeHtml(c.code)} · ${Number(c.discount_percent)}% off</button>`).join("") : '<span class="no-coupons">No coupons available for your cart total</span>';
+    const availableCoupons = [...coupons, ...offerCodes];
+    const html = availableCoupons.length
+      ? availableCoupons.map((c) => {
+          const minimum = Number(c.min_order_amount || 0);
+          const eligible = subtotal >= minimum;
+          const minimumLabel = minimum > 0 ? ` · Min order ${formatPrice(minimum)}` : "";
+          return `<button class="coupon-chip${eligible ? "" : " is-ineligible"}" type="button" data-coupon-chip="${escapeHtml(c.code)}" ${eligible ? "" : `title="Add ${formatPrice(minimum - subtotal)} more to use this coupon"`}>${escapeHtml(c.code)} · ${Number(c.discount_percent)}% off${minimumLabel}</button>`;
+        }).join("")
+      : '<span class="no-coupons">No active coupons available</span>';
     containers.forEach((container) => { if (container) container.innerHTML = html; });
   } catch (error) {
     containers.forEach((container) => { if (container) container.innerHTML = ""; });
@@ -1251,11 +1439,13 @@ document.addEventListener("click", (event) => {
   const chip = event.target.closest("[data-coupon-chip]");
   if (!chip) return;
   const code = chip.dataset.couponChip || "";
-  const bagInput = document.querySelector("#bag-coupon-code");
-  const checkoutInput = document.querySelector("#coupon-code");
-  if (bagInput) bagInput.value = code;
-  if (checkoutInput) checkoutInput.value = code;
-  applyCoupon(bagInput || checkoutInput, document.querySelector("#bag-coupon-status") || document.querySelector("#coupon-status"));
+  const isCheckoutCoupon = Boolean(chip.closest("#available-coupons"));
+  const input = document.querySelector(isCheckoutCoupon ? "#coupon-code" : "#bag-coupon-code");
+  const status = document.querySelector(isCheckoutCoupon ? "#coupon-status" : "#bag-coupon-status");
+  const otherInput = document.querySelector(isCheckoutCoupon ? "#bag-coupon-code" : "#coupon-code");
+  if (input) input.value = code;
+  if (otherInput) otherInput.value = code;
+  if (input && status) applyCoupon(input, status);
 });
 detailsModal.querySelectorAll("[data-close-details]").forEach((element) => element.addEventListener("click", () => closeModal(detailsModal)));
 document.querySelector("#star-rating-input")?.addEventListener("click", (event) => {
@@ -1343,7 +1533,7 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
       const response = await fetch(`${API_URL}/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.id, items, address, couponCode: activeCouponCode, deliveryCharge, subtotal: orderSubtotal, discount: orderDiscount, totalAmount: orderTotal }),
+        body: JSON.stringify({ userId: user.id, items, productIds: cart.map((item) => item.id), address, couponCode: activeCouponCode, deliveryCharge, subtotal: orderSubtotal, discount: orderDiscount, totalAmount: orderTotal }),
       });
       const data = await response.json().catch(() => ({ error: "Invalid response" }));
       if (response.ok) {
@@ -1374,7 +1564,7 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
   }
   const localOrders = JSON.parse(localStorage.getItem(ordersStorageKey) || "[]");
   const finalOrderId = serverOrderId || `SR${Date.now().toString().slice(-6)}`;
-  localOrders.unshift({ id: finalOrderId, items, address, userId: user?.id || null, deliveryCharge, orderTotal, couponCode: activeCouponCode, couponDiscount: orderDiscount });
+  localOrders.unshift({ id: finalOrderId, items, productIds: cart.map((item) => item.id), address, userId: user?.id || null, deliveryCharge, orderTotal, couponCode: activeCouponCode, couponDiscount: orderDiscount });
   localStorage.setItem(ordersStorageKey, JSON.stringify(localOrders));
   cart = [];
   clearCoupon();
