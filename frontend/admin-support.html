@@ -86,18 +86,11 @@ body {
     transition: box-shadow .2s ease, transform .2s ease;
 }
 
-.ticket-breakdown-card:hover {
-    box-shadow: 0 8px 20px rgba(0,0,0,.1);
-    transform: translateY(-2px);
-}
-
+.ticket-breakdown-card:hover,
 .ticket-breakdown-card:focus-visible {
-    outline: 3px solid #93c5fd;
-    outline-offset: 3px;
-}
-
-.ticket-breakdown-card[aria-pressed="true"] {
-    box-shadow: 0 0 0 2px #2563eb, 0 8px 20px rgba(37, 99, 235, .14);
+    box-shadow: 0 4px 14px rgba(37, 99, 235, .16);
+    outline: 3px solid #bfdbfe;
+    outline-offset: 2px;
 }
 
 .ticket-breakdown-card .stat-label {
@@ -116,112 +109,34 @@ body {
     font-weight: 600;
 }
 
-.ticket-breakdown-modal {
-    position: fixed;
-    z-index: 100;
-    inset: 0;
-    display: none;
-    place-items: center;
-    padding: 20px;
-}
-
-.ticket-breakdown-modal.open {
-    display: grid;
-    animation: ticketBreakdownFadeIn .2s ease;
-}
-
-.ticket-breakdown-overlay {
-    position: absolute;
-    inset: 0;
-    background: rgba(17, 24, 39, .58);
-}
-
-.ticket-breakdown-dialog {
-    position: relative;
-    width: min(100%, 560px);
-    max-height: min(720px, calc(100vh - 40px));
-    overflow-y: auto;
-    border-radius: 16px;
-    background: white;
-    box-shadow: 0 24px 70px rgba(0,0,0,.24);
-    animation: ticketBreakdownPop .25s ease;
-}
-
-.ticket-breakdown-header {
-    display: flex;
-    justify-content: space-between;
-    gap: 20px;
-    padding: 24px 24px 18px;
-    border-bottom: 1px solid #e5e7eb;
-}
-
-.ticket-breakdown-title {
-    margin: 0;
-    color: #6b7280;
-    font-size: 13px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .06em;
-}
-
-.ticket-breakdown-total {
-    display: block;
-    margin-top: 5px;
-    color: #1f2937;
-    font-size: 34px;
-    line-height: 1.1;
-}
-
-.ticket-breakdown-total-label {
-    display: block;
-    margin-top: 3px;
-    color: #6b7280;
-    font-size: 12px;
-    font-weight: 500;
-    line-height: 1.2;
-    text-transform: none;
-    letter-spacing: 0;
-}
-
-.ticket-breakdown-close {
-    flex: 0 0 auto;
-    width: 36px;
-    height: 36px;
-    border: 0;
-    border-radius: 8px;
-    background: #f3f4f6;
-    color: #4b5563;
-    font-size: 24px;
-    line-height: 1;
-    cursor: pointer;
-}
-
-.ticket-breakdown-close:hover {
-    background: #e5e7eb;
-    color: #111827;
-}
-
-.ticket-breakdown-close:focus-visible,
 .ticket-breakdown-row:focus-visible {
     outline: 3px solid #93c5fd;
     outline-offset: 2px;
 }
 
-.ticket-breakdown-list {
-    padding: 12px 24px 24px;
-}
-
 .ticket-breakdown-row {
+    width: 100%;
     display: grid;
     grid-template-columns: 1fr auto;
     align-items: center;
     gap: 16px;
+    border: 0;
     padding: 15px 0;
     border-bottom: 1px solid #e5e7eb;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
 }
 
 .ticket-breakdown-row:last-child {
     border-bottom: 0;
+}
+
+.ticket-breakdown-row:disabled {
+    opacity: .55;
+    cursor: default;
 }
 
 .ticket-breakdown-label {
@@ -231,11 +146,37 @@ body {
 }
 
 .ticket-breakdown-count {
-    min-width: 42px;
+    min-width: 32px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: #eff6ff;
     color: #2563eb;
-    font-size: 20px;
+    font-size: 15px;
     font-weight: 700;
+    line-height: 1.2;
     text-align: right;
+}
+
+.category-filter {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.category-filter .ticket-breakdown-row {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: white;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+}
+
+.category-filter .ticket-breakdown-row:hover:not(:disabled),
+.category-filter .ticket-breakdown-row.active {
+    border-color: #2563eb;
+    background: #eff6ff;
 }
 
 .ticket-breakdown-bar {
@@ -257,20 +198,6 @@ body {
     padding: 28px 0 18px;
     color: #6b7280;
     text-align: center;
-}
-
-@keyframes ticketBreakdownFadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
-@keyframes ticketBreakdownPop {
-    from { opacity: 0; transform: translateY(12px) scale(.98); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-body.modal-open {
-    overflow: hidden;
 }
 
 /* FILTER */
@@ -310,7 +237,8 @@ body.modal-open {
 
 .dashboard {
     display: grid;
-    grid-template-columns: 420px 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
     gap: 18px;
 }
 
@@ -325,46 +253,108 @@ body.modal-open {
     overflow-y: auto;
 }
 
-.ticket {
-    padding: 16px;
-    border-bottom: 1px solid #eee;
-    cursor: pointer;
+.ticket-table-wrap {
+    overflow-x: auto;
 }
 
-.ticket:hover,
-.ticket.active {
+.ticket-table {
+    width: 100%;
+    min-width: 0;
+    border-collapse: collapse;
+    font-size: 13px;
+    table-layout: fixed;
+}
+
+.ticket-table th {
+    padding: 12px 14px;
+    border-bottom: 1px solid #dbe3ee;
+    background: #eef5ff;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.ticket-table td {
+    padding: 13px 14px;
+    border-bottom: 1px solid #edf0f4;
+    color: #374151;
+    vertical-align: middle;
+}
+
+.ticket-table th:nth-child(1),
+.ticket-table td:nth-child(1) {
+    width: 105px;
+}
+
+.ticket-table th:nth-child(2),
+.ticket-table td:nth-child(2) {
+    width: 190px;
+}
+
+.ticket-table th:nth-child(3),
+.ticket-table td:nth-child(3) {
+    width: 110px;
+}
+
+.ticket-table th:nth-child(4),
+.ticket-table td:nth-child(4) {
+    width: 140px;
+}
+
+.ticket-table th:nth-child(6),
+.ticket-table td:nth-child(6) {
+    width: 115px;
+}
+
+.ticket-table th:nth-child(7),
+.ticket-table td:nth-child(7) {
+    width: 170px;
+}
+
+.ticket-table tbody tr {
+    cursor: pointer;
+    transition: background .15s ease;
+}
+
+.ticket-table tbody tr:hover,
+.ticket-table tbody tr.active {
     background: #eff6ff;
 }
 
-.ticket-top {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
+.ticket-id {
+    color: #2563eb;
+    font-weight: 700;
+    white-space: nowrap;
 }
 
-.ticket-name {
-    font-weight: bold;
+.ticket-customer strong,
+.ticket-customer span,
+.ticket-message {
+    display: block;
 }
 
-    .ticket-email {
-        color: #6b7280;
-        font-size: 13px;
-        margin-top: 4px;
-    }
+.ticket-customer span,
+.ticket-order,
+.ticket-message,
+.ticket-date {
+    color: #6b7280;
+    font-size: 12px;
+}
 
-    .ticket-order {
-        color: #4b5563;
-        font-size: 13px;
-        margin-top: 2px;
-    }
+.ticket-customer span,
+.ticket-order,
+.ticket-date {
+    margin-top: 3px;
+}
 
 .ticket-message {
-    margin-top: 8px;
-    font-size: 14px;
-    color: #374151;
-    white-space: nowrap;
+    max-width: none;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .badge {
@@ -400,6 +390,7 @@ body.modal-open {
     background: white;
     border-radius: 12px;
     min-height: 650px;
+    min-width: 0;
     display: flex;
     flex-direction: column;
 }
@@ -421,6 +412,7 @@ body.modal-open {
 .messages {
     flex: 1;
     padding: 20px;
+    min-height: 0;
     overflow-y: auto;
     max-height: 440px;
 }
@@ -533,29 +525,6 @@ body.modal-open {
         max-width: 90%;
     }
 
-    .ticket-breakdown-modal {
-        padding: 12px;
-        align-items: end;
-    }
-
-    .ticket-breakdown-dialog {
-        max-height: calc(100vh - 24px);
-        border-radius: 16px 16px 12px 12px;
-    }
-
-    .ticket-breakdown-header {
-        gap: 12px;
-        padding: 20px;
-    }
-
-    .ticket-breakdown-total {
-        font-size: 30px;
-    }
-
-    .ticket-breakdown-list {
-        padding: 4px 20px 20px;
-    }
-
     .ticket-breakdown-row {
         gap: 12px;
         padding: 13px 0;
@@ -565,8 +534,8 @@ body.modal-open {
         font-size: 14px;
     }
 
-    .ticket-breakdown-count {
-        font-size: 18px;
+    .category-filter {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .reply-actions {
@@ -594,12 +563,7 @@ body.modal-open {
         <button
             class="stat ticket-breakdown-card"
             type="button"
-            data-ticket-status="all"
-            aria-haspopup="dialog"
-            aria-controls="ticketBreakdownModal"
-            aria-pressed="true"
-            aria-label="View total ticket category breakdown"
-            onclick="openTicketBreakdown()"
+            onclick="filterByStatus('')"
         >
             <span class="stat-label">Total Tickets</span>
             <strong id="totalTickets">0</strong>
@@ -609,48 +573,35 @@ body.modal-open {
         <button
             class="stat ticket-breakdown-card"
             type="button"
-            data-ticket-status="open"
-            aria-haspopup="dialog"
-            aria-controls="ticketBreakdownModal"
-            aria-pressed="false"
-            aria-label="View open ticket category breakdown"
-            onclick="openTicketBreakdown('open')"
+            onclick="filterByStatus('open')"
         >
             <span class="stat-label">Open</span>
             <strong id="openTickets">0</strong>
-            <span class="ticket-breakdown-hint">View open ticket breakdown</span>
+            <span class="ticket-breakdown-hint">View open</span>
         </button>
 
         <button
             class="stat ticket-breakdown-card"
             type="button"
-            data-ticket-status="in_progress"
-            aria-haspopup="dialog"
-            aria-controls="ticketBreakdownModal"
-            aria-pressed="false"
-            aria-label="View in-progress ticket category breakdown"
-            onclick="openTicketBreakdown('in_progress')"
+            onclick="filterByStatus('in_progress')"
         >
             <span class="stat-label">In Progress</span>
             <strong id="progressTickets">0</strong>
-            <span class="ticket-breakdown-hint">View in-progress breakdown</span>
+            <span class="ticket-breakdown-hint">View in-progress</span>
         </button>
 
         <button
             class="stat ticket-breakdown-card"
             type="button"
-            data-ticket-status="resolved"
-            aria-haspopup="dialog"
-            aria-controls="ticketBreakdownModal"
-            aria-pressed="false"
-            aria-label="View resolved ticket category breakdown"
-            onclick="openTicketBreakdown('resolved')"
+            onclick="filterByStatus('resolved')"
         >
             <span class="stat-label">Resolved</span>
             <strong id="resolvedTickets">0</strong>
-            <span class="ticket-breakdown-hint">View resolved breakdown</span>
+            <span class="ticket-breakdown-hint">View resolved</span>
         </button>
     </div>
+
+    <div class="category-filter" id="categoryFilter" aria-label="Filter tickets by category"></div>
 
     <div class="toolbar">
 
@@ -677,7 +628,7 @@ body.modal-open {
 
         <div class="tickets">
 
-            <div class="ticket-list" id="ticketList">
+            <div class="ticket-list ticket-table-wrap" id="ticketList">
                 <div class="empty">Loading tickets...</div>
             </div>
 
@@ -699,37 +650,6 @@ body.modal-open {
 
 </div>
 
-<div
-    class="ticket-breakdown-modal"
-    id="ticketBreakdownModal"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="ticketBreakdownTitle"
-    aria-hidden="true"
->
-    <div class="ticket-breakdown-overlay" onclick="closeTicketBreakdown()"></div>
-    <section class="ticket-breakdown-dialog">
-        <div class="ticket-breakdown-header">
-            <div>
-                <p class="ticket-breakdown-title" id="ticketBreakdownTitle">Ticket Breakdown</p>
-                <strong class="ticket-breakdown-total">
-                    <span id="breakdownTotal">0</span>
-                    <span class="ticket-breakdown-total-label" id="breakdownTotalLabel">Total Tickets</span>
-                </strong>
-            </div>
-            <button
-                class="ticket-breakdown-close"
-                type="button"
-                aria-label="Close ticket breakdown"
-                onclick="closeTicketBreakdown()"
-            >
-                &times;
-            </button>
-        </div>
-        <div class="ticket-breakdown-list" id="ticketBreakdownList"></div>
-    </section>
-</div>
-
 <script>
 
 /*
@@ -744,8 +664,8 @@ const API = API_BASE;
 
 let tickets = [];
 let selectedTicket = null;
-let ticketBreakdownTrigger = null;
 let activeTicketStatus = "all";
+let activeTicketCategory = "";
 
 const ticketStatusLabels = {
     all: "Total Tickets",
@@ -828,8 +748,6 @@ async function loadTickets() {
         tickets = Array.isArray(data) ? data : [];
         activeTicketStatus =
             document.getElementById("statusFilter").value || "all";
-        syncTicketStatusCards();
-
         updateStats();
         renderTickets();
 
@@ -862,9 +780,7 @@ function updateStats() {
     document.getElementById("resolvedTickets").textContent =
         tickets.filter(t => t.status === "resolved").length;
 
-    if (document.getElementById("ticketBreakdownModal").classList.contains("open")) {
-        renderTicketBreakdown();
-    }
+    renderCategoryFilter();
 }
 
 
@@ -963,29 +879,28 @@ function getTicketBreakdown() {
 }
 
 
-function renderTicketBreakdown() {
+function renderCategoryFilter() {
 
     const breakdown = getTicketBreakdown();
     const breakdownTickets = getTicketsForBreakdown();
     const total = breakdownTickets.length;
-    const list = document.getElementById("ticketBreakdownList");
-    const statusLabel =
-        ticketStatusLabels[activeTicketStatus] ||
-        ticketStatusLabels.all;
-
-    document.getElementById("ticketBreakdownTitle").textContent =
-        statusLabel;
-    document.getElementById("breakdownTotal").textContent = total;
-    document.getElementById("breakdownTotalLabel").textContent =
-        statusLabel;
+    const list = document.getElementById("categoryFilter");
+    if (!list) return;
 
     list.innerHTML = breakdown.map(category => {
         const width = total
             ? Math.round((category.count / total) * 100)
             : 0;
+        const activeClass =
+            activeTicketCategory === category.value ? "active" : "";
 
         return `
-            <div class="ticket-breakdown-row">
+            <button
+                class="ticket-breakdown-row ${activeClass}"
+                type="button"
+                onclick="filterByCategory('${category.value}')"
+                ${category.count ? "" : "disabled"}
+            >
                 <span class="ticket-breakdown-label">
                     ${escapeHtml(category.label)}
                 </span>
@@ -995,64 +910,29 @@ function renderTicketBreakdown() {
                 <div class="ticket-breakdown-bar" aria-hidden="true">
                     <span style="width: ${width}%"></span>
                 </div>
-            </div>
+            </button>
         `;
     }).join("");
 }
 
 
-function syncTicketStatusCards() {
-
-    document.querySelectorAll(".ticket-breakdown-card").forEach(card => {
-        const isActive =
-            card.getAttribute("data-ticket-status") === activeTicketStatus;
-
-        card.setAttribute("aria-pressed", String(isActive));
-    });
-}
-
-
-function openTicketBreakdown(status = "all") {
-
-    const modal = document.getElementById("ticketBreakdownModal");
-    const statusFilter = document.getElementById("statusFilter");
-
-    activeTicketStatus = status || "all";
-    statusFilter.value =
-        activeTicketStatus === "all" ? "" : activeTicketStatus;
-    syncTicketStatusCards();
+function filterByCategory(category) {
+    activeTicketCategory = category || "";
     renderTickets();
-    ticketBreakdownTrigger = document.activeElement;
-    renderTicketBreakdown();
-    modal.classList.add("open");
-    modal.setAttribute("aria-hidden", "false");
-    document.body.classList.add("modal-open");
-    modal.querySelector(".ticket-breakdown-close").focus();
+    renderCategoryFilter();
 }
 
 
-function closeTicketBreakdown() {
+function filterByStatus(status) {
+    const statusFilter = document.getElementById("statusFilter");
+    if (!statusFilter) return;
 
-    const modal = document.getElementById("ticketBreakdownModal");
-    const trigger = ticketBreakdownTrigger;
-
-    modal.classList.remove("open");
-    modal.setAttribute("aria-hidden", "true");
-    document.body.classList.remove("modal-open");
-    ticketBreakdownTrigger = null;
-
-    if (trigger && typeof trigger.focus === "function") {
-        trigger.focus();
-    }
+    statusFilter.value = status || "";
+    activeTicketStatus = status || "all";
+    activeTicketCategory = "";
+    renderTickets();
+    renderCategoryFilter();
 }
-
-document.addEventListener("keydown", event => {
-    const modal = document.getElementById("ticketBreakdownModal");
-
-    if (event.key === "Escape" && modal.classList.contains("open")) {
-        closeTicketBreakdown();
-    }
-});
 
 
 /* RENDER */
@@ -1070,30 +950,41 @@ function renderTickets() {
         document.getElementById("statusFilter").value;
 
     const filtered = tickets.filter(ticket => {
-
         const matchesStatus = !status || ticket.status === status;
+        const matchesCategory = !activeTicketCategory ||
+            normalizeTicketCategory(ticket.category) === activeTicketCategory;
         const matchesSearch =
             String(ticket.id).includes(search) ||
             String(ticket.name || "").toLowerCase().includes(search) ||
             String(ticket.email || "").toLowerCase().includes(search) ||
             String(ticket.message || "").toLowerCase().includes(search);
 
-        return matchesStatus && matchesSearch;
-
+        return matchesStatus && matchesCategory && matchesSearch;
     });
 
     if (!filtered.length) {
-
         list.innerHTML =
             `<div class="empty">
                 No support tickets found.
             </div>`;
-
         return;
     }
 
-    list.innerHTML = filtered.map(ticket => {
-
+    list.innerHTML = `
+        <table class="ticket-table">
+            <thead>
+                <tr>
+                    <th>Ticket ID</th>
+                    <th>Customer</th>
+                    <th>Order</th>
+                    <th>Category</th>
+                    <th>Message</th>
+                    <th>Status</th>
+                    <th>Created At</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${filtered.map(ticket => {
         const active =
             selectedTicket &&
             Number(selectedTicket.id) === Number(ticket.id)
@@ -1101,40 +992,31 @@ function renderTickets() {
                 : "";
 
         return `
-            <div
+            <tr
                 class="ticket ${active}"
+                tabindex="0"
+                role="button"
+                aria-label="Open ticket #${ticket.id} conversation"
                 onclick="openTicket(${ticket.id})"
+                onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openTicket(${ticket.id}); }"
             >
-
-                <div class="ticket-top">
-
-                    <div>
-                        <div class="ticket-name">
-                            #${ticket.id} - ${escapeHtml(ticket.name)}
-                        </div>
-
-                        <div class="ticket-email">
-                            ${escapeHtml(ticket.email)}
-                        </div>
-                        ${ticket.order_id ? `<div class="ticket-order">Order #${escapeHtml(ticket.order_id)}</div>` : ""}
-                    </div>
-
-                    <span class="badge ${ticket.status}">
-                        ${formatStatus(ticket.status)}
-                    </span>
-
-                </div>
-
-                <div class="ticket-message">
-                    ${escapeHtml(ticket.message)}
-                </div>
-
-            </div>
+                <td class="ticket-id">#${ticket.id}</td>
+                <td class="ticket-customer">
+                    <strong>${escapeHtml(ticket.name)}</strong>
+                    <span>${escapeHtml(ticket.email)}</span>
+                </td>
+                <td class="ticket-order">${ticket.order_id ? `#${escapeHtml(ticket.order_id)}` : "-"}</td>
+                <td>${escapeHtml(ticket.category || "-")}</td>
+                <td class="ticket-message" title="${escapeHtml(ticket.message)}">${escapeHtml(ticket.message)}</td>
+                <td><span class="badge ${escapeHtml(ticket.status)}">${formatStatus(ticket.status)}</span></td>
+                <td class="ticket-date">${formatDate(ticket.created_at)}</td>
+            </tr>
         `;
-
-    }).join("");
+                }).join("")}
+            </tbody>
+        </table>
+    `;
 }
-
 
 /* SEARCH */
 
@@ -1161,6 +1043,9 @@ async function openTicket(id) {
             await apiRequest(`/admin/support/${id}/replies`);
 
         renderConversation(ticket, replies || []);
+        document
+            .querySelector(".conversation")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
 
     } catch (error) {
 

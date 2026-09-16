@@ -131,6 +131,25 @@ function renderStars(rating) {
   return "★".repeat(full) + (half ? "½" : "") + "☆".repeat(empty);
 }
 
+function productUnit(product) {
+  const source = `${product?.name || ""} ${product?.description || ""}`;
+  const match = source.match(/(?:^|\s)(\d+\s*\/\s*\d+|\d+(?:\.\d+)?)\s*(kg|g|grams?)(?=\s|$|[),.-])/i);
+  if (match) {
+    const rawAmount = match[1].replace(/\s/g, "");
+    const amount = rawAmount.includes("/")
+      ? rawAmount.split("/").reduce((numerator, value, index) => index ? numerator / Number(value) : Number(value), 0)
+      : Number(rawAmount);
+    const unit = match[2].toLowerCase() === "kg" ? "kg" : "g";
+    const displayAmount = rawAmount === "1/2" || amount === 0.5 ? "1/2" : amount;
+    return `${displayAmount} ${unit}`;
+  }
+
+  const category = String(product?.category || "").toLowerCase();
+  if (category.includes("sweet")) return "1/2 kg";
+  if (category.includes("snack")) return "200 g";
+  return "1 pack";
+}
+
 async function loadProductReviews(productId) {
   try {
     const [reviewsRes, ratingRes] = await Promise.all([
@@ -278,9 +297,22 @@ function setAuthMode(mode) {
 }
 
 function openProfile() {
+  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
   profileError.textContent = "";
   profileModal.setAttribute("aria-hidden", "false");
   profileModal.classList.add("open");
+  if (user) {
+    document.querySelector("#profile-title").textContent = user.name || "Your profile";
+    document.querySelector("#profile-subtitle").textContent = user.email || "Signed in account";
+    profileLoginTab.hidden = true;
+    profileRegisterTab.hidden = true;
+    profileLoginForm.hidden = true;
+    profileRegisterForm.hidden = true;
+    return;
+  }
+  profileLoginTab.hidden = false;
+  profileRegisterTab.hidden = false;
+  profileLoginForm.hidden = false;
   setProfileAuthMode("login");
 }
 
@@ -322,9 +354,15 @@ async function submitProfileAuth(form, endpoint, payload) {
       window.location.href = "admin-login.html";
       return;
     }
-    setAuthenticated(result.user);
-    showToast(endpoint.includes("register") ? "Account created successfully" : "Welcome back");
-    closeProfile();
+    if (endpoint.includes("register")) {
+      form.reset();
+      setProfileAuthMode("login");
+      showToast("Account created. Please sign in.");
+    } else {
+      setAuthenticated(result.user);
+      showToast("Welcome back");
+      closeProfile();
+    }
   } catch (error) {
     profileError.textContent = error.message;
     showToast(error.message, false);
@@ -353,8 +391,14 @@ async function submitAuth(form, endpoint, payload) {
       window.location.href = "admin-login.html";
       return;
     }
-    setAuthenticated(result.user);
-    showToast(endpoint.includes("register") ? "Account created successfully" : "Welcome back");
+    if (endpoint.includes("register")) {
+      form.reset();
+      setAuthMode("login");
+      showToast("Account created. Please sign in.");
+    } else {
+      setAuthenticated(result.user);
+      showToast("Welcome back");
+    }
   } catch (error) {
     authError.textContent = error.message;
     showToast(error.message, false);
@@ -492,7 +536,7 @@ async function openDetails(id) {
   document.querySelector("#details-name").textContent = product.name;
   document.querySelector("#details-price").innerHTML = discountFor(product) ? `${formatPrice(finalPrice(product))} <del>${formatPrice(product.price)}</del>` : formatPrice(product.price);
   document.querySelector("#details-description").textContent = product.description || `Fresh ${product.name}, carefully selected and delivered in its best condition.`;
-  document.querySelector("#details-unit").textContent = discountFor(product) ? `${discountFor(product)}% off · 1 pack` : "1 pack";
+  document.querySelector("#details-unit").textContent = discountFor(product) ? `${discountFor(product)}% off · ${productUnit(product)}` : productUnit(product);
   document.querySelector("#details-quantity").textContent = "1";
   const productId = Number(detailsModal.dataset.productId);
   await loadProductReviews(productId);

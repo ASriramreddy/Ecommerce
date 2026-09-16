@@ -420,6 +420,15 @@
           const messages = await response.json().catch(() => []);
           if (!response.ok) throw new Error(messages.error || "Failed to load");
 
+          const messageSignature = JSON.stringify(messages.map((message) => ({
+            id: message.id,
+            message: message.message,
+            is_customer_reply: message.is_customer_reply,
+            created_at: message.created_at
+          })));
+          if (container.dataset.messageSignature === messageSignature) return;
+          container.dataset.messageSignature = messageSignature;
+
           if (!messages.length) {
             container.innerHTML = '<div class="empty-conversation" style="padding:20px;">No messages yet. Start the conversation!</div>';
             return;

@@ -648,8 +648,6 @@ app.post("/products/:id/reviews", async (req, res) => {
         await reviewsReady;
         const [[product]] = await db.promise().query("SELECT id FROM products WHERE id = ?", [productId]);
         if (!product) return res.status(404).json({ error: "Product not found" });
-        const [[existing]] = await db.promise().query("SELECT id FROM reviews WHERE product_id = ? AND user_id = ?", [productId, userId]);
-        if (existing) return res.status(409).json({ error: "You have already reviewed this product" });
         const [result] = await db.promise().query(
             "INSERT INTO reviews (product_id, user_id, rating, comment) VALUES (?, ?, ?, ?)",
             [productId, userId, rating, comment || null]

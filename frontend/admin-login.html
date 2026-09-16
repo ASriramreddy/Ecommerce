@@ -11,6 +11,7 @@
 			.admin-shell { max-width: 1200px; margin: auto; padding: 40px 24px 80px; }
 			.admin-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 32px; padding-bottom: 20px; border-bottom: 1px solid var(--adm-line); }
 			.admin-header h1 { font-size: 32px; letter-spacing: -0.8px; margin: 0; }
+			.admin-profile { display: block; margin-top: 6px; color: var(--adm-muted); font-size: 12px; font-weight: 600; }
 			.admin-header .hero-link { color: var(--adm-accent); text-decoration: none; font-size: 13px; font-weight: 600; }
 			.admin-header .hero-link:hover { color: var(--adm-accent-dark); }
 			.admin-header .admin-actions { display: flex; align-items: center; gap: 12px; }
@@ -86,7 +87,7 @@
 		<main class="admin-page">
 			<div class="admin-shell">
 			<header class="admin-header">
-				<div><p class="eyebrow">Sriram Store</p><h1>Admin panel</h1></div>
+				<div><p class="eyebrow">Sriram Store</p><h1>Admin panel</h1><small class="admin-profile" id="admin-profile"></small></div>
 				<div class="admin-actions">
 					<span class="admin-notification" id="admin-notification">
 						<button class="admin-notification-button" id="admin-notification-button" type="button" aria-label="Notifications">
@@ -210,7 +211,7 @@
 					<form id="coupon-form" class="admin-form">
 						<label>Code<input id="coupon-code-admin" required></label>
 						<label>Discount %<input id="coupon-discount" type="number" min="1" max="100" step="0.01" value="10" required></label>
-						<label>Min order â‚¹<input id="coupon-min-order" type="number" min="0" step="0.01" value="0" required></label>
+						<label>Min order Rs<input id="coupon-min-order" type="number" min="0" step="0.01" value="0" required></label>
 						<label>Max uses<input id="coupon-max-uses" type="number" min="1" step="1"></label>
 						<label>Expires at<input id="coupon-expires" type="datetime-local"></label>
 						<button type="submit" class="primary-button">Create</button>
@@ -233,11 +234,11 @@
 					<p style="margin:0 0 12px;color:var(--adm-muted);font-size:12px;">Create promotional offers that apply discounts to selected products or entire categories. Add a coupon code so customers can apply the offer at checkout.</p>
 					<form id="offer-form" class="admin-form">
 						<div class="admin-field"><label>Offer name<input id="offer-name" required placeholder="e.g. Diwali Sweets Sale"></label></div>
-						<div class="admin-field"><label>Festival<select id="offer-festival"><option value="">â€” No festival â€”</option></select></label></div>
+						<div class="admin-field"><label>Festival<select id="offer-festival"><option value="">- No festival -</option></select></label></div>
 						<div class="admin-field"><label>Discount %<input id="offer-discount" type="number" min="1" max="100" step="0.01" value="10" required></label></div>
 						<div class="admin-field"><label>Coupon code<input id="offer-coupon" placeholder="DIWALI10"></label></div>
 						<div class="admin-field"><label>Image URL<input id="offer-image" placeholder="https://..."></label></div>
-						<div class="admin-field"><label>Min order â‚¹<input id="offer-min-order" type="number" min="0" step="0.01" value="0" required></label></div>
+						<div class="admin-field"><label>Min order Rs<input id="offer-min-order" type="number" min="0" step="0.01" value="0" required></label></div>
 						<div class="admin-field"><label>Start date<input id="offer-start-date" type="date"></label></div>
 						<div class="admin-field"><label>End date<input id="offer-end-date" type="date"></label></div>
 						<div class="admin-field"><label>Status<select id="offer-active"><option value="1" selected>Active</option><option value="0">Inactive</option></select></label></div>
@@ -260,6 +261,7 @@
 		<script>
 			const API_BASE = "https://ecommerce-1-r5m4.onrender.com";
 			const tokenKey = "sriram-admin-token";
+			const adminProfileKey = "sriram-admin-profile";
 			const loginPanel = document.querySelector("#login-panel");
 			const dashboard = document.querySelector("#dashboard");
 			const customersPanel = document.querySelector("#customers-panel");
@@ -306,6 +308,9 @@
 			function updateAdminHeader() {
 				const loggedIn = !!localStorage.getItem(tokenKey);
 				document.querySelector("#admin-logout").hidden = !loggedIn;
+				const profile = JSON.parse(localStorage.getItem(adminProfileKey) || "null");
+				const profileEl = document.querySelector("#admin-profile");
+				if (profileEl) profileEl.textContent = loggedIn && profile ? `${profile.name} · ${profile.email}` : "";
 			}
 
 			const adminNotificationButton = document.querySelector("#admin-notification-button");
@@ -450,7 +455,7 @@
 
 			async function loadProducts() {
 				const products = await request("/products");
-				list.innerHTML = products.map(product => `<tr><td>${product.image ? `<img src="${product.image}" alt="">` : "-"}</td><td>${product.name}</td><td>â‚¹${Number(product.price).toLocaleString("en-IN")}</td><td>${product.category}</td><td><div class="stock-control"><input type="number" min="0" step="1" value="${Number(product.stock) || 0}" data-stock-input="${product.id}" aria-label="Stock for ${product.name}"><input type="number" min="0" max="100" step="0.01" value="${Number(product.discount) || 0}" data-discount-input="${product.id}" aria-label="Discount for ${product.name}"><button type="button" class="primary-button" data-stock="${product.id}">Save</button></div></td><td>${Number(product.discount) || 0}%</td><td><button class="delete-button" data-id="${product.id}">Delete</button></td></tr>`).join("");
+				list.innerHTML = products.map(product => `<tr><td>${product.image ? `<img src="${product.image}" alt="">` : "-"}</td><td>${product.name}</td><td>Rs ${Number(product.price).toLocaleString("en-IN")}</td><td>${product.category}</td><td><div class="stock-control"><input type="number" min="0" step="1" value="${Number(product.stock) || 0}" data-stock-input="${product.id}" aria-label="Stock for ${product.name}"><input type="number" min="0" max="100" step="0.01" value="${Number(product.discount) || 0}" data-discount-input="${product.id}" aria-label="Discount for ${product.name}"><button type="button" class="primary-button" data-stock="${product.id}">Save</button></div></td><td>${Number(product.discount) || 0}%</td><td><button class="delete-button" data-id="${product.id}">Delete</button></td></tr>`).join("");
 			}
 
 			async function showDashboard() {
@@ -501,9 +506,9 @@
 						<dt>Address</dt><dd>${escapeHtml(order.address || "-")}</dd>
 						<dt>Status</dt><dd><span class="summary-status">${escapeHtml(order.status || "placed")}</span></dd>
 						<dt>Placed on</dt><dd>${order.created_at ? new Date(order.created_at).toLocaleString() : "-"}</dd>
-						<dt>Delivery</dt><dd>â‚¹${Number(order.delivery_charge || 0).toLocaleString("en-IN")}</dd>
+						<dt>Delivery</dt><dd>Rs ${Number(order.delivery_charge || 0).toLocaleString("en-IN")}</dd>
 					</dl>
-					<div class="summary-total">Total: â‚¹${Number(order.total_amount || 0).toLocaleString("en-IN")}</div>
+					<div class="summary-total">Total: Rs ${Number(order.total_amount || 0).toLocaleString("en-IN")}</div>
 				`;
 			}
 
@@ -581,6 +586,7 @@
 					const data = await request("/admin/login", { method: "POST", body: JSON.stringify({ email: document.querySelector("#admin-email").value, password: document.querySelector("#admin-password").value }) });
 					if (data.token) {
 						localStorage.setItem(tokenKey, data.token);
+						localStorage.setItem(adminProfileKey, JSON.stringify({ name: "Administrator", email: document.querySelector("#admin-email").value.trim().toLowerCase() }));
 						const redirect = new URLSearchParams(window.location.search).get("redirect");
 						if (redirect) {
 							window.location.href = redirect;
@@ -688,7 +694,7 @@
 
 			async function loadCoupons() {
 				const coupons = await request("/admin/coupons");
-				document.querySelector("#coupon-list").innerHTML = coupons.map((c) => `<tr><td><strong>${c.code}</strong></td><td>${c.discount_percent}%</td><td>â‚¹${Number(c.min_order_amount).toLocaleString("en-IN")}</td><td>${c.max_uses || "âˆž"}</td><td>${c.used_count}</td><td>${c.expires_at ? new Date(c.expires_at).toLocaleString() : "Never"}</td><td><span class="admin-status ${c.is_active ? "is-active" : "is-inactive"}">${c.is_active ? "Active" : "Inactive"}</span></td><td><button class="delete-button" data-coupon-code="${c.code}">Delete</button></td></tr>`).join("") || '<tr><td colspan="8" style="text-align:center;color:#999;">No coupons found</td></tr>';
+				document.querySelector("#coupon-list").innerHTML = coupons.map((c) => `<tr><td><strong>${c.code}</strong></td><td>${c.discount_percent}%</td><td>Rs ${Number(c.min_order_amount).toLocaleString("en-IN")}</td><td>${c.max_uses || "Unlimited"}</td><td>${c.used_count}</td><td>${c.expires_at ? new Date(c.expires_at).toLocaleString() : "Never"}</td><td><span class="admin-status ${c.is_active ? "is-active" : "is-inactive"}">${c.is_active ? "Active" : "Inactive"}</span></td><td><button class="delete-button" data-coupon-code="${c.code}">Delete</button></td></tr>`).join("") || '<tr><td colspan="8" style="text-align:center;color:#999;">No coupons found</td></tr>';
 			}
 
 			async function loadSupportTickets() {
@@ -726,8 +732,8 @@
 			function showTicketDetail(ticket) {
 				document.querySelector("#detail-name").textContent = ticket.name;
 				document.querySelector("#detail-email").textContent = ticket.email;
-				document.querySelector("#detail-phone").textContent = ticket.phone || "â€”";
-				document.querySelector("#detail-order").textContent = ticket.order_id || "â€”";
+				document.querySelector("#detail-phone").textContent = ticket.phone || "-";
+				document.querySelector("#detail-order").textContent = ticket.order_id || "-";
 				document.querySelector("#detail-category").textContent = ticket.category;
 				document.querySelector("#detail-status").textContent = ticket.status.replace("_", " ");
 				document.querySelector("#detail-created").textContent = new Date(ticket.created_at).toLocaleString();
@@ -824,6 +830,7 @@
 
 			document.querySelector("#admin-logout").addEventListener("click", async () => {
 				localStorage.removeItem(tokenKey);
+				localStorage.removeItem(adminProfileKey);
 				showPanel(loginPanel);
 				updateAdminHeader();
 				stopNotificationPolling();
@@ -832,9 +839,9 @@
 
 			async function loadFestivals() {
 				const festivals = await request("/admin/festivals");
-				festivalListEl.innerHTML = festivals.map((f) => `<tr><td>${f.id}</td><td>${escapeHtml(f.name)}</td><td>${f.image_url ? `<img src="${escapeHtml(f.image_url)}" style="height:40px;width:auto;border-radius:4px;border:1px solid var(--adm-line);">` : '<span style="color:var(--adm-muted);">â€”</span>'}</td><td>${new Date(f.created_at).toLocaleDateString()}</td><td><button class="delete-button" data-festival-id="${f.id}" type="button">Delete</button></td></tr>`).join("") || '<tr><td colspan="5" style="text-align:center;color:#999;">No festivals yet</td></tr>';
+				festivalListEl.innerHTML = festivals.map((f) => `<tr><td>${f.id}</td><td>${escapeHtml(f.name)}</td><td>${f.image_url ? `<img src="${escapeHtml(f.image_url)}" style="height:40px;width:auto;border-radius:4px;border:1px solid var(--adm-line);">` : '<span style="color:var(--adm-muted);">-</span>'}</td><td>${new Date(f.created_at).toLocaleDateString()}</td><td><button class="delete-button" data-festival-id="${f.id}" type="button">Delete</button></td></tr>`).join("") || '<tr><td colspan="5" style="text-align:center;color:#999;">No festivals yet</td></tr>';
 				const previous = offerFestivalSelect.value;
-				offerFestivalSelect.innerHTML = '<option value="">â€” No festival â€”</option>' + festivals.map((f) => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join("");
+				offerFestivalSelect.innerHTML = '<option value="">- No festival -</option>' + festivals.map((f) => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join("");
 				offerFestivalSelect.value = previous;
 			}
 
@@ -847,26 +854,26 @@
 				const parts = [];
 				if (offer.categories?.length) parts.push(`Categories: ${offer.categories.map(escapeHtml).join(", ")}`);
 				if (offer.product_names?.length) parts.push(`Products: ${offer.product_names.map(escapeHtml).join(", ")}`);
-				return parts.length ? parts.join("<br>") : '<span style="color:var(--adm-muted);">â€”</span>';
+				return parts.length ? parts.join("<br>") : '<span style="color:var(--adm-muted);">-</span>';
 			}
 
 			function renderWindow(offer) {
 				if (!offer.start_date && !offer.end_date) return '<span style="color:var(--adm-muted);">Always</span>';
 				const fmt = (d) => new Date(d).toLocaleDateString();
-				return `${offer.start_date ? fmt(offer.start_date) : "Open"} â†’ ${offer.end_date ? fmt(offer.end_date) : "Open"}`;
+				return `${offer.start_date ? fmt(offer.start_date) : "Open"} to ${offer.end_date ? fmt(offer.end_date) : "Open"}`;
 			}
 
 			async function loadOffers() {
 				const offers = await request("/admin/offers");
 				offerListEl.innerHTML = offers.map((o) => `<tr>
 					<td><strong>${escapeHtml(o.name)}</strong></td>
-					<td>${o.festival_name ? escapeHtml(o.festival_name) : '<span style="color:var(--adm-muted);">â€”</span>'}</td>
-					<td>${o.coupon_code ? `<code>${escapeHtml(o.coupon_code)}</code>` : '<span style="color:var(--adm-muted);">â€”</span>'}</td>
+					<td>${o.festival_name ? escapeHtml(o.festival_name) : '<span style="color:var(--adm-muted);">-</span>'}</td>
+					<td>${o.coupon_code ? `<code>${escapeHtml(o.coupon_code)}</code>` : '<span style="color:var(--adm-muted);">-</span>'}</td>
 					<td>${Number(o.discount_percent)}%</td>
-					<td>â‚¹${Number(o.min_order_amount).toLocaleString("en-IN")}</td>
+					<td>Rs ${Number(o.min_order_amount).toLocaleString("en-IN")}</td>
 					<td style="max-width:260px;font-size:12px;">${renderScopeCell(o)}</td>
 					<td style="font-size:12px;">${renderWindow(o)}</td>
-					<td>${o.image_url ? `<img src="${escapeHtml(o.image_url)}" style="height:40px;width:auto;border-radius:4px;border:1px solid var(--adm-line);">` : '<span style="color:var(--adm-muted);">â€”</span>'}</td>
+					<td>${o.image_url ? `<img src="${escapeHtml(o.image_url)}" style="height:40px;width:auto;border-radius:4px;border:1px solid var(--adm-line);">` : '<span style="color:var(--adm-muted);">-</span>'}</td>
 					<td><span class="admin-status ${o.is_active ? "is-active" : "is-inactive"}">${o.is_active ? "Active" : "Inactive"}</span><br><button class="delete-button" data-toggle-offer="${o.id}" type="button" style="margin-top:6px;">${o.is_active ? "Deactivate" : "Activate"}</button></td>
 					<td>
 						<button class="delete-button" data-edit-offer="${o.id}" type="button">Edit</button>
