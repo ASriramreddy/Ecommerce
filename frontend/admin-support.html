@@ -604,7 +604,8 @@ body {
             <option value="closed">Closed</option>
         </select>
 
-        <button onclick="loadTickets()">Refresh</button>
+        <button onclick="downloadTickets()">Download</button>
+        <button onclick="printTickets()">Print</button>
 
     </div>
 
@@ -1008,6 +1009,144 @@ function filterTickets() {
     renderTickets();
 }
 
+/* DOWNLOAD TICKETS AS CSV */
+function downloadTickets() {
+    const search =
+        document.getElementById("search").value
+            .toLowerCase()
+            .trim();
+
+    const status =
+        document.getElementById("statusFilter").value;
+
+    const filtered = tickets.filter(ticket => {
+        const matchesStatus = !status || ticket.status === status;
+        const matchesCategory = !activeTicketCategory ||
+            normalizeTicketCategory(ticket.category) === activeTicketCategory;
+        const matchesSearch =
+            String(ticket.id).includes(search) ||
+            String(ticket.name || "").toLowerCase().includes(search) ||
+            String(ticket.email || "").toLowerCase().includes(search) ||
+            String(ticket.message || "").toLowerCase().includes(search);
+
+        return matchesStatus && matchesCategory && matchesSearch;
+    });
+
+    if (!filtered.length) {
+        alert("No tickets to download.");
+        return;
+    }
+
+    const headers = ["Ticket ID", "Customer Name", "Customer Email", "Order ID", "Category", "Message", "Status", "Created At"];
+    const rows = filtered.map(ticket => [
+        `#${ticket.id}`,
+        escapeHtml(ticket.name || ""),
+        escapeHtml(ticket.email || ""),
+        ticket.order_id ? `#${escapeHtml(ticket.order_id)}` : "",
+        escapeHtml(ticket.category || ""),
+        escapeHtml(ticket.message || ""),
+        formatStatus(ticket.status),
+        formatDate(ticket.created_at)
+    ]);
+
+    const csvContent = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(",")).join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `support-tickets-${new Date().toISOString().split("T")[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
+/* PRINT TICKETS */
+function printTickets() {
+    const search =
+        document.getElementById("search").value
+            .toLowerCase()
+            .trim();
+
+    const status =
+        document.getElementById("statusFilter").value;
+
+    const filtered = tickets.filter(ticket => {
+        const matchesStatus = !status || ticket.status === status;
+        const matchesCategory = !activeTicketCategory ||
+            normalizeTicketCategory(ticket.category) === activeTicketCategory;
+        const matchesSearch =
+            String(ticket.id).includes(search) ||
+            String(ticket.name || "").toLowerCase().includes(search) ||
+            String(ticket.email || "").toLowerCase().includes(search) ||
+            String(ticket.message || "").toLowerCase().includes(search);
+
+        return matchesStatus && matchesCategory && matchesSearch;
+    });
+
+    if (!filtered.length) {
+        alert("No tickets to print.");
+        return;
+    }
+
+    const printWindow = window.open("", "_blank");
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Support Tickets - ${new Date().toLocaleDateString()}</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; }
+                h1 { color: #1f2937; }
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; font-size: 12px; }
+                th { background: #eef5ff; color: #475569; }
+                tr:nth-child(even) { background: #f9fafb; }
+                .badge { padding: 2px 6px; border-radius: 10px; font-size: 10px; }
+                .open { background: #fee2e2; color: #991b1b; }
+                .in_progress { background: #fef3c7; color: #92400e; }
+                .resolved { background: #dcfce7; color: #166534; }
+                .closed { background: #e5e7eb; color: #374151; }
+                @media print { body { padding: 0; } }
+            </style>
+        </head>
+        <body>
+            <h1>Customer Support Tickets</h1>
+            <p>Generated: ${new Date().toLocaleString()}</p>
+            <p>Total Tickets: ${filtered.length}</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Ticket ID</th>
+                        <th>Customer</th>
+                        <th>Email</th>
+                        <th>Order</th>
+                        <th>Category</th>
+                        <th>Message</th>
+                        <th>Status</th>
+                        <th>Created At</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${filtered.map(ticket => `
+                        <tr>
+                            <td>#${ticket.id}</td>
+                            <td>${escapeHtml(ticket.name || "")}</td>
+                            <td>${escapeHtml(ticket.email || "")}</td>
+                            <td>${ticket.order_id ? `#${escapeHtml(ticket.order_id)}` : "-"}</td>
+                            <td>${escapeHtml(ticket.category || "-")}</td>
+                            <td>${escapeHtml(ticket.message || "-")}</td>
+                            <td><span class="badge ${escapeHtml(ticket.status)}">${formatStatus(ticket.status)}</span></td>
+                            <td>${formatDate(ticket.created_at)}</td>
+                        </tr>
+                    `).join("")}
+                </tbody>
+            </table>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+}
 
 /* OPEN TICKET */
 
