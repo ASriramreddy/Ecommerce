@@ -43,6 +43,10 @@
       /* Conversation styles */
       .conversation-section { margin-top: 40px; padding-top: 40px; border-top: 1px solid var(--line); }
       .conversation-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 16px; }
+      .conversation-actions { display: flex; gap: 8px; }
+      .conversation-actions .secondary-button { width: auto; padding: 8px 16px; border: 1px solid var(--line); border-radius: 8px; font-weight: 600; cursor: pointer; background: var(--surface); color: var(--ink); font-size: 12px; transition: background 0.2s; }
+      .conversation-actions .secondary-button:hover { background: #fff; color: var(--green); }
+      @media print { .store-header, .conversation-actions, .reply-form, .hero-link, .support-hero, .faq-list, .contact-grid, .support-form, #conversation-start { display: none !important; } .conversation-item { break-inside: avoid; page-break-inside: avoid; } }
       .conversation-header h2 { margin: 0; font-size: 24px; }
       .conversation-list { display: flex; flex-direction: column; gap: 16px; }
       .conversation-item { border: 1px solid var(--line); border-radius: 12px; background: #fff; overflow: hidden; }
@@ -206,6 +210,11 @@
           <div>
             <p class="eyebrow">Your conversations</p>
             <h2>Support Tickets</h2>
+          </div>
+          <div class="conversation-actions">
+            <button class="secondary-button" id="btn-print-ticket" type="button" aria-label="Print tickets">Print</button>
+            <button class="secondary-button" id="btn-download-csv" type="button" aria-label="Download CSV">Download CSV</button>
+            <button class="secondary-button" id="btn-download-pdf" type="button" aria-label="Download PDF">Download PDF</button>
           </div>
         </div>
         <div class="conversation-list" id="conversation-list">
@@ -517,6 +526,83 @@
         stopMessagePolling();
       });
 
+      document.getElementById("btn-print-ticket").addEventListener("click", () => { window.print(); });
+      document.getElementById("btn-download-csv").addEventListener("click", () => {
+        const rows = [["Ticket ID", "Order ID", "Status", "Category", "Created At", "Sender", "Message"]];
+        document.querySelectorAll(".conversation-item").forEach(item => {
+          const ticketId = item.dataset.ticketId;
+          const headerEl = item.querySelector(".conversation-ticket-header");
+          const tid = headerEl?.querySelector(".ticket-id")?.textContent?.trim() || ticketId || "";
+          const oid = headerEl?.querySelector(".ticket-order")?.textContent?.trim().replace("Order #", "") || "N/A";
+          const status = headerEl?.querySelector(".ticket-status")?.textContent?.trim() || "N/A";
+          const category = headerEl?.querySelector(".ticket-category")?.textContent?.trim() || "N/A";
+          const createdAt = headerEl?.querySelector(".ticket-date")?.textContent?.trim() || "N/A";
+          const messagesEl = item.querySelector(".conversation-messages");
+          const messages = messagesEl ? Array.from(messagesEl.querySelectorAll(".message")) : [];
+          if (messages.length === 0) {
+            rows.push([tid, oid, status, category, createdAt, "", ""]);
+          } else {
+            messages.forEach((msg, idx) => {
+              const sender = msg.classList.contains("customer") ? "Customer" : "Support Team";
+              const time = msg.querySelector(".message-time")?.textContent?.trim() || "";
+              const content = msg.querySelector(".message-content")?.textContent?.trim() || "";
+              rows.push([tid, oid, status, category, createdAt, sender, content]);
+            });
+          }
+        });
+        const csv = rows.map(r => r.map(cell => {
+          const s = String(cell ?? "").replace(/"/g, '""');
+          return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s}"` : s;
+        }).join(",")).join("\n");
+        const blob = new Blob(["﻿" + csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `support-tickets-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast("CSV downloaded");
+      });
+      document.getElementById("btn-download-pdf").addEventListener("click", () => {
+        const rows = [["Ticket ID", "Order ID", "Status", "Category", "Created At", "Sender", "Message"]];
+        document.querySelectorAll(".conversation-item").forEach(item => {
+          const ticketId = item.dataset.ticketId;
+          const headerEl = item.querySelector(".conversation-ticket-header");
+          const tid = headerEl?.querySelector(".ticket-id")?.textContent?.trim() || ticketId || "";
+          const oid = headerEl?.querySelector(".ticket-order")?.textContent?.trim().replace("Order #", "") || "N/A";
+          const status = headerEl?.querySelector(".ticket-status")?.textContent?.trim() || "N/A";
+          const category = headerEl?.querySelector(".ticket-category")?.textContent?.trim() || "N/A";
+          const createdAt = headerEl?.querySelector(".ticket-date")?.textContent?.trim() || "N/A";
+          const messagesEl = item.querySelector(".conversation-messages");
+          const messages = messagesEl ? Array.from(messagesEl.querySelectorAll(".message")) : [];
+          if (messages.length === 0) {
+            rows.push([tid, oid, status, category, createdAt, "", ""]);
+          } else {
+            messages.forEach((msg) => {
+              const sender = msg.classList.contains("customer") ? "Customer" : "Support Team";
+              const time = msg.querySelector(".message-time")?.textContent?.trim() || "";
+              const content = msg.querySelector(".message-content")?.textContent?.trim() || "";
+              rows.push([tid, oid, status, category, createdAt, sender, content]);
+            });
+          }
+        });
+        const html = `<html><head><title>Support Tickets Report</title><style>
+          body { font-family: Arial, sans-serif; margin: 40px; font-size: 12px; }
+          h1 { color: #2c5f2d; border-bottom: 2px solid #2c5f2d; padding-bottom: 10px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+          th { background: #2c5f2d; color: white; padding: 10px; text-align: left; }
+          td { padding: 8px 10px; border-bottom: 1px solid #ddd; }
+          tr:nth-child(even) { background: #f9f9f9; }
+        </style></head><body><h1>Support Tickets Report</h1><p>Generated: ${new Date().toLocaleString()}</p><table><thead><tr><th>Ticket ID</th><th>Order ID</th><th>Status</th><th>Category</th><th>Created At</th><th>Sender</th><th>Message</th></tr></thead><tbody>${rows.slice(1).map(r => `<tr>${r.map(c => `<td>${String(c ?? "").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
+        const win = window.open("", "_blank");
+        if (win) {
+          win.document.write(html);
+          win.document.close();
+          setTimeout(() => { win.print(); }, 500);
+        }
+      });
       document.getElementById("start-conversation").addEventListener("click", async () => {
         const textarea = document.getElementById("start-conversation-message");
         const status = document.getElementById("conversation-status");

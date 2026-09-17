@@ -1853,6 +1853,7 @@ app.post("/orders", async (req, res) => {
     const deliveryCharge = Number(body.deliveryCharge || 0);
     const subtotal = Number(body.subtotal || 0);
     const discount = Number(body.discount || 0);
+    const productIds = Array.isArray(body.productIds) ? body.productIds.map(Number).filter((id) => Number.isInteger(id) && id > 0) : [];
     const totalAmount = Number(body.totalAmount || 0) + deliveryCharge;
     console.log(`[ORDERS] New order request: user=${userId} items=${items} subtotal=${subtotal} discount=${discount} delivery=${deliveryCharge} total=${totalAmount}`);
     if (!Number.isInteger(userId) || userId < 1 || !Number.isInteger(items) || items < 1 || !address) return res.status(400).json({ error: "Valid user id, items, and address are required" });

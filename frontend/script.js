@@ -634,6 +634,10 @@ function statusLabel(status) {
   return map[normalizedStatus] || "Order";
 }
 
+function normalizeOrderStatus(status) {
+  return String(status || "placed").trim().toLowerCase();
+}
+
 function renderOrderTracking(status) {
   const normalizedStatus = String(status || "placed").toLowerCase();
   const tracking = document.querySelector("#order-tracking");
@@ -661,7 +665,7 @@ function renderOrderTracking(status) {
 function paintOrders(orders) {
   const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
   ordersList.innerHTML = orders.length ? orders.map((order) => {
-    const status = order.status || "placed";
+    const status = normalizeOrderStatus(order.status);
     const productIds = Array.isArray(order.productIds) ? order.productIds : (order.lineItems || []).map((item) => Number(item.id)).filter(Boolean);
     const isFinal = ["cancelled", "returned", "delivered"].includes(status);
     const isReturned = status === "returned";
@@ -701,7 +705,7 @@ async function renderOrders() {
             couponDiscount: serverOrder.couponDiscount || local?.couponDiscount,
             discount: serverOrder.discount || local?.discount,
             lineItems: local?.lineItems,
-            productIds: serverOrder.productIds || local?.productIds || [],
+            productIds: serverOrder.productIds?.length ? serverOrder.productIds : (local?.productIds || []),
             orderTotal: serverOrder.totalAmount
           };
         });
@@ -724,9 +728,37 @@ function refreshOpenOrderDetails(orders) {
   if (!orderDetailsModal.classList.contains("open")) return;
   const order = orders.find((item) => String(item.id) === String(orderDetailsModal.dataset.orderId));
   if (!order) return;
-  const status = order.status || "placed";
+  const status = normalizeOrderStatus(order.status);
   document.querySelector("#order-details-status").textContent = statusLabel(status);
   renderOrderTracking(status);
+  if (status === "delivered") {
+    const rateActions = document.querySelector("#order-rate-actions");
+    const orderProductIds = Array.isArray(order.productIds) ? order.productIds : (Array.isArray(order.lineItems) ? order.lineItems.map((item) => Number(item.id)).filter(Boolean) : []);
+    const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+    if (rateActions && orderProductIds.length) {
+      rateActions.innerHTML = orderProductIds.map((productId) => {
+        const product = productById(productId);
+        const productName = product?.name || "Product";
+        return `
+          <div class="order-product-rating" data-product-id="${productId}">
+            <h4>${escapeHtml(productName)}</h4>
+            <div class="rating-form" data-product-id="${productId}">
+              <div class="star-rating-input" data-product-id="${productId}">
+                <button type="button" data-rating="1" aria-label="1 star">★</button>
+                <button type="button" data-rating="2" aria-label="2 stars">★</button>
+                <button type="button" data-rating="3" aria-label="3 stars">★</button>
+                <button type="button" data-rating="4" aria-label="4 stars">★</button>
+                <button type="button" data-rating="5" aria-label="5 stars">★</button>
+              </div>
+              <textarea rows="2" placeholder="Share your experience with this product..." data-review-comment="${productId}"></textarea>
+              <button class="primary-button submit-rating" type="button" data-submit-rating="${productId}" ${user?.id ? "" : "disabled"}>Submit Rating</button>
+              ${!user?.id ? '<small class="rating-login-hint">Sign in to submit a rating</small>' : ""}
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+  }
 }
 
 async function openCheckout() {
@@ -1070,7 +1102,7 @@ async function openOrderDetails(orderId) {
       const serverOrders = await response.json().catch(() => []);
       if (response.ok && Array.isArray(serverOrders)) {
         const serverOrder = serverOrders.find((o) => o.id === orderId);
-        if (serverOrder) order = { ...order, ...serverOrder, productIds: serverOrder.productIds || order?.productIds || [], orderTotal: serverOrder.totalAmount };
+        if (serverOrder) order = { ...order, ...serverOrder, productIds: serverOrder.productIds?.length ? serverOrder.productIds : (order?.productIds || []), orderTotal: serverOrder.totalAmount };
       }
     } catch (error) {
       console.error("Could not refresh order:", error.message);
@@ -1081,12 +1113,13 @@ async function openOrderDetails(orderId) {
   const delivery = Number(order.deliveryCharge || 0);
   const discount = Number(order.discount || order.couponDiscount || 0);
   document.querySelector("#order-details-id").textContent = order.id;
-  document.querySelector("#order-details-status").textContent = statusLabel(order.status || "placed");
-  renderOrderTracking(order.status || "placed");
+  const orderStatus = normalizeOrderStatus(order.status);
+  document.querySelector("#order-details-status").textContent = statusLabel(orderStatus);
+  renderOrderTracking(orderStatus);
   const rateActions = document.querySelector("#order-rate-actions");
-  const orderProductIds = Array.isArray(order.productIds) ? order.productIds : [];
+    const orderProductIds = Array.isArray(order.productIds) ? order.productIds : (Array.isArray(order.lineItems) ? order.lineItems.map((item) => Number(item.id)).filter(Boolean) : []);
   if (rateActions) {
-    if (order.status === "delivered") {
+    if (orderStatus === "delivered") {
       const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
       rateActions.innerHTML = orderProductIds.map((productId) => {
         const product = productById(productId);
