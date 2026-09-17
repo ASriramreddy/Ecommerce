@@ -703,6 +703,14 @@ function getOrderProductIds(order) {
     ? order.lineItems.map((item) => Number(item.id)).filter((id) => Number.isInteger(id) && id > 0)
     : [];
 }
+function getProductNameFromOrder(order, productId) {
+  if (Array.isArray(order?.lineItems)) {
+    const item = order.lineItems.find((li) => Number(li.id) === Number(productId));
+    if (item?.name) return item.name;
+  }
+  const product = productById(productId);
+  return product?.name || "Product";
+}
 
 async function renderOrders() {
   const localOrders = JSON.parse(localStorage.getItem(ordersStorageKey) || "[]");
@@ -721,7 +729,7 @@ async function renderOrders() {
             couponCode: serverOrder.couponCode || local?.couponCode,
             couponDiscount: serverOrder.couponDiscount || local?.couponDiscount,
             discount: serverOrder.discount || local?.discount,
-            lineItems: local?.lineItems,
+            lineItems: local?.lineItems ?? serverOrder.lineItems,
             productIds: serverOrder.productIds?.length ? serverOrder.productIds : (local?.productIds || []),
             orderTotal: serverOrder.totalAmount
           };
@@ -755,8 +763,7 @@ function refreshOpenOrderDetails(orders) {
     if (rateActions) {
       if (orderProductIds.length) {
         rateActions.innerHTML = orderProductIds.map((productId) => {
-          const product = productById(productId);
-          const productName = product?.name || "Product";
+          const productName = getProductNameFromOrder(order, productId);
           return `
             <div class="order-product-rating" data-product-id="${productId}">
               <h4>${escapeHtml(productName)}</h4>
@@ -1146,8 +1153,7 @@ async function openOrderDetails(orderId) {
     if (orderStatus === "delivered") {
       const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
       rateActions.innerHTML = orderProductIds.map((productId) => {
-        const product = productById(productId);
-        const productName = product?.name || "Product";
+        const productName = getProductNameFromOrder(order, productId);
         return `
           <div class="order-product-rating" data-product-id="${productId}">
             <h4>${escapeHtml(productName)}</h4>
@@ -1605,7 +1611,7 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
       const response = await fetch(`${API_URL}/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.id, items, productIds: cart.map((item) => item.id), address, couponCode: activeCouponCode, deliveryCharge, subtotal: orderSubtotal, discount: orderDiscount, totalAmount: orderTotal }),
+        body: JSON.stringify({ userId: user.id, items, productIds: cart.map((item) => item.id), lineItems: cart.map((item) => { const p = productById(item.id); return { id: item.id, name: p?.name || "Product", price: p?.price || 0, quantity: item.quantity, image: p?.image || "", discount: p?.discount || 0 }; }), address, couponCode: activeCouponCode, deliveryCharge, subtotal: orderSubtotal, discount: orderDiscount, totalAmount: orderTotal }),
       });
       const data = await response.json().catch(() => ({ error: "Invalid response" }));
       if (response.ok) {
@@ -1636,7 +1642,7 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
   }
   const localOrders = JSON.parse(localStorage.getItem(ordersStorageKey) || "[]");
   const finalOrderId = serverOrderId || `SR${Date.now().toString().slice(-6)}`;
-  localOrders.unshift({ id: finalOrderId, items, productIds: cart.map((item) => item.id), address, userId: user?.id || null, deliveryCharge, orderTotal, couponCode: activeCouponCode, couponDiscount: orderDiscount });
+  localOrders.unshift({ id: finalOrderId, items, productIds: cart.map((item) => item.id), lineItems: cart.map((item) => { const p = productById(item.id); return { id: item.id, name: p?.name || "Product", price: p?.price || 0, quantity: item.quantity, image: p?.image || "", discount: p?.discount || 0 }; }), address, userId: user?.id || null, deliveryCharge, orderTotal, couponCode: activeCouponCode, couponDiscount: orderDiscount });
   localStorage.setItem(ordersStorageKey, JSON.stringify(localOrders));
   cart = [];
   clearCoupon();

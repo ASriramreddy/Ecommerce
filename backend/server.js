@@ -303,6 +303,7 @@ const ordersReady = databaseReady.then(async () => {
             Total_Amount DECIMAL(10,2) NOT NULL DEFAULT 0,
             status ENUM('placed','packed','shipped','out_for_delivery','delivered','processing','cancelled','returned') NOT NULL DEFAULT 'placed',
             product_ids TEXT NULL,
+            line_items TEXT NULL,
             coupon_code VARCHAR(50) NULL,
             coupon_discount DECIMAL(10,2) NOT NULL DEFAULT 0,
             discount DECIMAL(10,2) NOT NULL DEFAULT 0,
@@ -340,6 +341,10 @@ const ordersReady = databaseReady.then(async () => {
     const [productIdsCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'product_ids'");
     if (!productIdsCols.length) {
         await dbPromise.query("ALTER TABLE orders ADD COLUMN product_ids TEXT NULL AFTER status");
+    }
+    const [lineItemsCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'line_items'");
+    if (!lineItemsCols.length) {
+        await dbPromise.query("ALTER TABLE orders ADD COLUMN line_items TEXT NULL AFTER product_ids");
     }
     console.log("✅ Orders table is ready");
 }).catch((error) => {
@@ -905,7 +910,7 @@ app.get("/admin/orders", requireAdmin, async (req, res) => {
         await databaseReady;
         await ordersReady;
         const [orders] = await db.promise().query(`
-            SELECT o.id, o.user_id, u.name as user_name, u.email as user_email, o.items, o.address, o.delivery_charge, o.status, o.created_at
+            SELECT o.id, o.user_id, u.name as user_name, u.email as user_email, o.items, o.address, o.delivery_charge, o.status, o.created_at, o.product_ids, o.line_items
             FROM orders o
             JOIN users u ON u.id = o.user_id
             ORDER BY o.created_at DESC
@@ -944,7 +949,7 @@ app.get("/admin/orders/:id", requireAdmin, async (req, res) => {
         await ordersReady;
         const [[order]] = await db.promise().query(`
             SELECT o.id, o.user_id, u.name as user_name, u.email as user_email, u.phone as user_phone,
-                 o.items, o.address, o.delivery_charge, o.Total_Amount, o.status, o.product_ids, o.created_at
+                 o.items, o.address, o.delivery_charge, o.Total_Amount, o.status, o.product_ids, o.line_items, o.created_at
             FROM orders o
             JOIN users u ON u.id = o.user_id
             WHERE o.id = ?
@@ -962,6 +967,7 @@ app.get("/admin/orders/:id", requireAdmin, async (req, res) => {
             total_amount: Number(order.Total_Amount) || 0,
             status: order.status,
             productIds: parseProductIds(order.product_ids),
+            lineItems: (() => { try { return JSON.parse(order.line_items || "[]"); } catch { return []; } })(),
             created_at: order.created_at
         });
     } catch (error) {
@@ -1018,7 +1024,7 @@ app.get("/orders", async (req, res) => {
     try {
         await ordersReady;
         const [rows] = await db.promise().query(
-            "SELECT id, user_id, items, address, delivery_charge, Total_Amount, status, product_ids, coupon_code, coupon_discount, discount, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC",
+            "SELECT id, user_id, items, address, delivery_charge, Total_Amount, status, product_ids, line_items, coupon_code, coupon_discount, discount, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC",
             [userId]
         );
         res.json(rows.map((row) => ({
@@ -1033,6 +1039,7 @@ app.get("/orders", async (req, res) => {
             couponDiscount: Number(row.coupon_discount) || 0,
             discount: Number(row.discount) || 0,
             productIds: parseProductIds(row.product_ids),
+            lineItems: (() => { try { return JSON.parse(row.line_items || "[]"); } catch { return []; } })(),
             createdAt: row.created_at
         })));
     } catch (error) {
@@ -1886,10 +1893,12 @@ app.post("/orders", async (req, res) => {
         }
         const id = `SR${Date.now().toString().slice(-6)}`;
 
+        const lineItems = Array.isArray(body.lineItems) ? body.lineItems : [];
+
         // 1. SAVE ORDER
         await db.promise().query(
-    "INSERT INTO orders (id, user_id, items, address, delivery_charge, Total_Amount, status, product_ids, coupon_code, coupon_discount, discount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [id, userId, items, address, deliveryCharge, totalAmount, "placed", JSON.stringify(productIds), couponCode || null, discount, discount]
+    "INSERT INTO orders (id, user_id, items, address, delivery_charge, Total_Amount, status, product_ids, line_items, coupon_code, coupon_discount, discount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [id, userId, items, address, deliveryCharge, totalAmount, "placed", JSON.stringify(productIds), JSON.stringify(lineItems), couponCode || null, discount, discount]
 );
 
         // 2. GET USER EMAIL
