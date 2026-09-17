@@ -9,6 +9,8 @@
 		"cors": "^2.8.6",
 		"dotenv": "^17.4.2",
 		"express": "^5.2.1",
+		"jspdf": "^4.2.1",
+		"jspdf-autotable": "^5.0.8",
 		"mysql2": "^3.24.2",
 		"nodemailer": "^9.1.1"
 	}

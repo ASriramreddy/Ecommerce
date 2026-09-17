@@ -785,6 +785,21 @@ app.post("/auth/login", async (req, res) => {
     }
 });
 
+app.post("/auth/forgot-password", async (req, res) => {
+    const body = req.body || {};
+    const email = String(body.email || "").trim().toLowerCase();
+    if (!email || !email.includes("@")) return res.status(400).json({ error: "Valid email is required" });
+    try {
+        await databaseReady;
+        await profilesReady;
+        const [[user]] = await db.promise().query("SELECT id FROM users WHERE email = ?", [email]);
+        res.json({ message: "If an account exists, a reset link would be sent to your email" });
+    } catch (error) {
+        console.error("Forgot password failed:", error.message);
+        res.status(503).json({ error: "Could not process request" });
+    }
+});
+
 app.get("/auth/me", async (req, res) => {
     const userId = Number(req.query.userId);
     if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
@@ -929,7 +944,7 @@ app.get("/admin/orders/:id", requireAdmin, async (req, res) => {
         await ordersReady;
         const [[order]] = await db.promise().query(`
             SELECT o.id, o.user_id, u.name as user_name, u.email as user_email, u.phone as user_phone,
-                   o.items, o.address, o.delivery_charge, o.Total_Amount, o.status, o.created_at
+                 o.items, o.address, o.delivery_charge, o.Total_Amount, o.status, o.product_ids, o.created_at
             FROM orders o
             JOIN users u ON u.id = o.user_id
             WHERE o.id = ?
@@ -946,6 +961,7 @@ app.get("/admin/orders/:id", requireAdmin, async (req, res) => {
             delivery_charge: Number(order.delivery_charge) || 0,
             total_amount: Number(order.Total_Amount) || 0,
             status: order.status,
+            productIds: parseProductIds(order.product_ids),
             created_at: order.created_at
         });
     } catch (error) {

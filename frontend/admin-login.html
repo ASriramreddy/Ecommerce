@@ -117,8 +117,9 @@
 					<form id="admin-login-form" class="admin-form login-form">
 						<label>Email<input id="admin-email" type="email" value="admin@sriramstore.local" required></label>
 						<label>Password<input id="admin-password" type="password" value="admin123" required></label>
-						<button type="submit" class="primary-button">Sign in</button>
-					</form>
+					<button type="submit" class="primary-button">Sign in</button>
+				</form>
+				<p style="text-align:center;margin-top:12px;"><a href="#" id="admin-forgot-password" style="color:var(--green);font-size:12px;">Forgot Password?</a></p>
 					<p class="admin-error" id="admin-error" role="alert"></p>
 				</section>
 				<section class="admin-panel" id="dashboard" hidden>
@@ -463,6 +464,7 @@
 				updateAdminHeader();
 				try { 
 					await loadProducts(); 
+					await loadOrders();
 					await loadAdminNotifications();
 					startNotificationPolling();
 				} catch (error) { productError.textContent = error.message; }
@@ -665,12 +667,27 @@
 				showPanel(customersPanel);
 				try { await loadCustomers(); } catch (error) { customerError.textContent = error.message; }
 			});
+			let ordersRefreshInterval = null;
+			function startOrdersRefresh() {
+				if (ordersRefreshInterval) clearInterval(ordersRefreshInterval);
+				ordersRefreshInterval = setInterval(() => {
+					if (!ordersPanel.hidden) loadOrders().catch(() => {});
+				}, 15000);
+			}
+			function stopOrdersRefresh() {
+				if (ordersRefreshInterval) {
+					clearInterval(ordersRefreshInterval);
+					ordersRefreshInterval = null;
+				}
+			}
 			document.querySelector("#orders-tab").addEventListener("click", async () => {
+				stopOrdersRefresh();
 				document.querySelectorAll(".admin-tabs .tab").forEach((t) => { t.classList.remove("is-active"); t.setAttribute("aria-selected", "false"); });
 				document.querySelector("#orders-tab").classList.add("is-active");
 				document.querySelector("#orders-tab").setAttribute("aria-selected", "true");
 				showPanel(ordersPanel);
 				try { await loadOrders(); } catch (error) { orderError.textContent = error.message; }
+				startOrdersRefresh();
 			});
 			document.querySelector("#coupons-tab").addEventListener("click", async () => {
 				document.querySelectorAll(".admin-tabs .tab").forEach((t) => { t.classList.remove("is-active"); t.setAttribute("aria-selected", "false"); });
@@ -834,6 +851,7 @@
 				showPanel(loginPanel);
 				updateAdminHeader();
 				stopNotificationPolling();
+				stopOrdersRefresh();
 				showToast("Logged out");
 			});
 
@@ -1037,6 +1055,26 @@
 					} catch (error) {
 						offerError.textContent = error.message;
 					}
+				}
+			});
+			document.querySelector("#admin-forgot-password")?.addEventListener("click", async (event) => {
+				event.preventDefault();
+				const email = prompt("Enter your email to reset your password:");
+				if (!email || !email.includes("@")) return;
+				try {
+					const response = await fetch(`${API_BASE}/auth/forgot-password`, {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ email }),
+					});
+					const data = await response.json().catch(() => ({ error: "Invalid response" }));
+					if (response.ok) {
+						showToast(data.message || "Password reset email sent");
+					} else {
+						showToast(data.error || "Could not process password reset", false);
+					}
+				} catch (error) {
+					showToast("Could not connect to server", false);
 				}
 			});
 		</script>

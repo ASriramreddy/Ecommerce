@@ -679,12 +679,29 @@ function paintOrders(orders) {
       : isCancelled
         ? `<span class="order-action-note" data-action="cancelled">Cancelled by store</span>`
         : isDelivered
-          ? `<span class="order-action-note" data-action="delivered">Delivered</span>`
+          ? `<span class="order-action-note" data-action="delivered">Delivered</span><button class="rate-product" type="button" data-rate-order="${order.id}">Rate Product</button>`
           : "";
     const addressState = (order.address || "").split(",").map((s) => s.trim()).pop() || "";
     const deliveryDays = getEstimatedDeliveryDaysForState(addressState);
     return `<div class="order-row" data-view-order="${order.id}"><div><strong>Order ${order.id}</strong><small>${order.items} item${order.items === 1 ? "" : "s"} · ${order.address} · ${deliveryDays} days</small></div><div class="order-actions"><span class="order-status" data-status="${status}">${statusLabel(status)}</span>${editButton}${returnButton}${cancelButton}${statusAction}</div></div>`;
   }).join("") : '<p class="empty-orders">Your placed orders will appear here.</p>';
+}
+
+function getOrderProductIds(order) {
+  if (Array.isArray(order?.productIds)) {
+    return order.productIds.map(Number).filter((id) => Number.isInteger(id) && id > 0);
+  }
+  if (typeof order?.productIds === "string") {
+    try {
+      const ids = JSON.parse(order.productIds);
+      if (Array.isArray(ids)) return ids.map(Number).filter((id) => Number.isInteger(id) && id > 0);
+    } catch {
+      // Fall back to line items below.
+    }
+  }
+  return Array.isArray(order?.lineItems)
+    ? order.lineItems.map((item) => Number(item.id)).filter((id) => Number.isInteger(id) && id > 0)
+    : [];
 }
 
 async function renderOrders() {
@@ -709,7 +726,7 @@ async function renderOrders() {
             orderTotal: serverOrder.totalAmount
           };
         });
-        const localOnly = localOrders.filter((o) => !serverOrders.some((s) => s.id === o.id) && !o.userId);
+        const localOnly = localOrders.filter((o) => !serverOrders.some((s) => s.id === o.id) && (!o.userId || o.userId === user.id));
         const all = [...merged, ...localOnly];
         localStorage.setItem(ordersStorageKey, JSON.stringify(all.map((o) => ({ ...o, status: o.status || "placed" }))));
         paintOrders(all);
@@ -733,31 +750,38 @@ function refreshOpenOrderDetails(orders) {
   renderOrderTracking(status);
   if (status === "delivered") {
     const rateActions = document.querySelector("#order-rate-actions");
-    const orderProductIds = Array.isArray(order.productIds) ? order.productIds : (Array.isArray(order.lineItems) ? order.lineItems.map((item) => Number(item.id)).filter(Boolean) : []);
+    const orderProductIds = getOrderProductIds(order);
     const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
-    if (rateActions && orderProductIds.length) {
-      rateActions.innerHTML = orderProductIds.map((productId) => {
-        const product = productById(productId);
-        const productName = product?.name || "Product";
-        return `
-          <div class="order-product-rating" data-product-id="${productId}">
-            <h4>${escapeHtml(productName)}</h4>
-            <div class="rating-form" data-product-id="${productId}">
-              <div class="star-rating-input" data-product-id="${productId}">
-                <button type="button" data-rating="1" aria-label="1 star">★</button>
-                <button type="button" data-rating="2" aria-label="2 stars">★</button>
-                <button type="button" data-rating="3" aria-label="3 stars">★</button>
-                <button type="button" data-rating="4" aria-label="4 stars">★</button>
-                <button type="button" data-rating="5" aria-label="5 stars">★</button>
+    if (rateActions) {
+      if (orderProductIds.length) {
+        rateActions.innerHTML = orderProductIds.map((productId) => {
+          const product = productById(productId);
+          const productName = product?.name || "Product";
+          return `
+            <div class="order-product-rating" data-product-id="${productId}">
+              <h4>${escapeHtml(productName)}</h4>
+              <div class="rating-form" data-product-id="${productId}">
+                <div class="star-rating-input" data-product-id="${productId}">
+                  <button type="button" data-rating="1" aria-label="1 star">★</button>
+                  <button type="button" data-rating="2" aria-label="2 stars">★</button>
+                  <button type="button" data-rating="3" aria-label="3 stars">★</button>
+                  <button type="button" data-rating="4" aria-label="4 stars">★</button>
+                  <button type="button" data-rating="5" aria-label="5 stars">★</button>
+                </div>
+                <textarea rows="2" placeholder="Share your experience with this product..." data-review-comment="${productId}"></textarea>
+                <button class="primary-button submit-rating" type="button" data-submit-rating="${productId}" ${user?.id ? "" : "disabled"}>Submit Rating</button>
+                ${!user?.id ? '<small class="rating-login-hint">Sign in to submit a rating</small>' : ""}
               </div>
-              <textarea rows="2" placeholder="Share your experience with this product..." data-review-comment="${productId}"></textarea>
-              <button class="primary-button submit-rating" type="button" data-submit-rating="${productId}" ${user?.id ? "" : "disabled"}>Submit Rating</button>
-              ${!user?.id ? '<small class="rating-login-hint">Sign in to submit a rating</small>' : ""}
             </div>
-          </div>
-        `;
-      }).join("");
+          `;
+        }).join("");
+      } else {
+        rateActions.innerHTML = '<p class="empty-orders" style="text-align:center;padding:16px;color:#999;">No products to rate in this order.</p>';
+      }
     }
+  } else {
+    const rateActions = document.querySelector("#order-rate-actions");
+    if (rateActions) rateActions.innerHTML = "";
   }
 }
 
@@ -1117,7 +1141,7 @@ async function openOrderDetails(orderId) {
   document.querySelector("#order-details-status").textContent = statusLabel(orderStatus);
   renderOrderTracking(orderStatus);
   const rateActions = document.querySelector("#order-rate-actions");
-    const orderProductIds = Array.isArray(order.productIds) ? order.productIds : (Array.isArray(order.lineItems) ? order.lineItems.map((item) => Number(item.id)).filter(Boolean) : []);
+    const orderProductIds = getOrderProductIds(order);
   if (rateActions) {
     if (orderStatus === "delivered") {
       const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
@@ -1226,6 +1250,21 @@ ordersList.addEventListener("click", async (event) => {
     orderEditModal.dataset.orderId = order.id;
     orderEditModal.classList.add("open");
     orderEditModal.setAttribute("aria-hidden", "false");
+    return;
+  }
+  const rateOrder = event.target.closest("[data-rate-order]");
+  if (rateOrder) {
+    openOrderDetails(rateOrder.dataset.rateOrder);
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        const rateActions = document.querySelector("#order-rate-actions");
+        if (rateActions) {
+          rateActions.scrollIntoView({ behavior: "smooth", block: "start" });
+          const card = document.querySelector(".checkout-modal.open .checkout-card");
+          if (card) card.scrollTop = rateActions.offsetTop - 20;
+        }
+      }, 100);
+    });
     return;
   }
   const viewOrder = event.target.closest("[data-view-order]");
@@ -1802,13 +1841,33 @@ document.querySelector("#customer-pin").addEventListener("blur", () => {
     }
   }, 200);
 });
-loginForm.addEventListener("submit", (event) => {
+ loginForm.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!loginForm.checkValidity()) return loginForm.reportValidity();
   submitAuth(loginForm, "/auth/login", {
     email: document.querySelector("#login-email").value,
     password: document.querySelector("#login-password").value,
   });
+});
+document.querySelector("#forgot-password-link")?.addEventListener("click", async (event) => {
+  event.preventDefault();
+  const email = prompt("Enter your email to reset your password:");
+  if (!email || !email.includes("@")) return;
+  try {
+    const response = await fetch(`${API_URL}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const data = await response.json().catch(() => ({ error: "Invalid response" }));
+    if (response.ok) {
+      alert(data.message || "Password reset email sent");
+    } else {
+      alert(data.error || "Could not process password reset");
+    }
+  } catch (error) {
+    alert("Could not connect to server");
+  }
 });
 registerForm.addEventListener("submit", (event) => {
   event.preventDefault();
