@@ -948,7 +948,7 @@ app.get("/admin/orders/:id", requireAdmin, async (req, res) => {
         await databaseReady;
         await ordersReady;
         const [[order]] = await db.promise().query(`
-            SELECT o.id, o.user_id, u.name as user_name, u.email as user_email, u.phone as user_phone,
+            SELECT o.id, o.user_id, u.name as user_name, u.email as user_email,
                  o.items, o.address, o.delivery_charge, o.Total_Amount, o.status, o.product_ids, o.line_items, o.created_at
             FROM orders o
             JOIN users u ON u.id = o.user_id
@@ -960,7 +960,6 @@ app.get("/admin/orders/:id", requireAdmin, async (req, res) => {
             user_id: order.user_id,
             user_name: order.user_name,
             user_email: order.user_email,
-            user_phone: order.user_phone,
             items: Number(order.items) || 0,
             address: order.address,
             delivery_charge: Number(order.delivery_charge) || 0,
