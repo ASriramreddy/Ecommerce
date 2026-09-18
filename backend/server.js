@@ -1936,22 +1936,32 @@ app.get("/support/faq", async (req, res) => {
 
 app.post("/orders", async (req, res) => {
     const body = req.body || {};
+
     const userId = Number(body.userId);
     const items = Number(body.items);
     const address = String(body.address || "").trim();
     const state = String(body.state || "").trim();
     const pincode = String(body.pincode || "").trim();
     const couponCode = String(body.couponCode || "").trim().toUpperCase();
+
     const deliveryCharge = Number(body.deliveryCharge || 0);
     const subtotal = Number(body.subtotal || 0);
     const discount = Number(body.discount || 0);
     const requestedTotal = Number(body.totalAmount);
+
     const productIds = Array.isArray(body.productIds)
-        ? body.productIds.map(Number).filter((id) => Number.isInteger(id) && id > 0)
+        ? body.productIds
+            .map(Number)
+            .filter((id) => Number.isInteger(id) && id > 0)
         : [];
-    const rawLineItems = Array.isArray(body.lineItems) ? body.lineItems : [];
+
+    const rawLineItems = Array.isArray(body.lineItems)
+        ? body.lineItems
+        : [];
+
     const lineItems = rawLineItems.map((item) => {
         if (!item || typeof item !== "object") return null;
+
         return {
             id: Number(item.id),
             name: String(item.name || "").trim(),
@@ -1961,106 +1971,279 @@ app.post("/orders", async (req, res) => {
             discount: Number(item.discount || 0)
         };
     });
+
     const subtotalAfterDiscount = subtotal - discount;
     const totalAmount = subtotalAfterDiscount + deliveryCharge;
-    console.log(`[ORDERS] New order request: user=${userId} items=${items} subtotal=${subtotal} discount=${discount} delivery=${deliveryCharge} total=${totalAmount}`);
+
+    console.log(
+        `[ORDERS] New order request: user=${userId} items=${items} subtotal=${subtotal} discount=${discount} delivery=${deliveryCharge} total=${totalAmount}`
+    );
+
+    // -----------------------------
+    // VALIDATION
+    // -----------------------------
+
     if (
-        !Number.isInteger(userId) || userId < 1 ||
-        !Number.isInteger(items) || items < 1 ||
-        !address || !state || !/^\d{6}$/.test(pincode) ||
-        !Number.isFinite(subtotal) || subtotal < 0 ||
-        !Number.isFinite(discount) || discount < 0 || discount > subtotal ||
-        !Number.isFinite(deliveryCharge) || deliveryCharge < 0 ||
-        !Number.isFinite(requestedTotal) || Math.abs(requestedTotal - subtotalAfterDiscount) > 0.01 ||
+        !Number.isInteger(userId) ||
+        userId < 1 ||
+
+        !Number.isInteger(items) ||
+        items < 1 ||
+
+        !address ||
+        !state ||
+        !/^\d{6}$/.test(pincode) ||
+
+        !Number.isFinite(subtotal) ||
+        subtotal < 0 ||
+
+        !Number.isFinite(discount) ||
+        discount < 0 ||
+        discount > subtotal ||
+
+        !Number.isFinite(deliveryCharge) ||
+        deliveryCharge < 0 ||
+
+        !Number.isFinite(requestedTotal) ||
+        Math.abs(requestedTotal - totalAmount) > 0.01 ||
+
         !productIds.length ||
+
         rawLineItems.length !== lineItems.length ||
+
         !lineItems.length ||
-        lineItems.some((item) => !Number.isInteger(item.id) || item.id < 1 || !item.name || !Number.isFinite(item.quantity) || item.quantity < 1 || !Number.isFinite(item.price) || item.price < 0) ||
-        lineItems.reduce((sum, item) => sum + item.quantity, 0) !== items
+
+        lineItems.some(
+            (item) =>
+                !Number.isInteger(item.id) ||
+                item.id < 1 ||
+                !item.name ||
+                !Number.isFinite(item.quantity) ||
+                item.quantity < 1 ||
+                !Number.isFinite(item.price) ||
+                item.price < 0
+        ) ||
+
+        lineItems.reduce(
+            (sum, item) => sum + item.quantity,
+            0
+        ) !== items
     ) {
-        return res.status(400).json({ error: "Valid user, items, address, pincode, state, and totals are required" });
+        return res.status(400).json({
+            error: "Valid user, items, address, pincode, state, and totals are required"
+        });
     }
+
     try {
         await databaseReady;
         await ordersReady;
+
+        // -----------------------------
+        // GET USER
+        // -----------------------------
+
         const [[user]] = await db.promise().query(
             "SELECT name, email FROM users WHERE id = ?",
             [userId]
         );
-        if (!user) return res.status(404).json({ error: "User not found" });
 
-        const connection = await db.getConnection();
+        console.log("[ORDERS] User lookup result:", user);
+
+        if (!user) {
+            return res.status(404).json({
+                error: "User not found"
+            });
+        }
+
+        // -----------------------------
+        // GET MYSQL CONNECTION
+        // -----------------------------
+
+        const connection = await db.promise().getConnection();
+
         let transactionStarted = false;
+
+        // IMPORTANT:
+        // Declare ID outside the transaction
+        // because it is also needed for email + response.
+        let id = "";
+
         try {
             await connection.beginTransaction();
             transactionStarted = true;
 
+            // -----------------------------
+            // COUPON
+            // -----------------------------
+
             if (couponCode) {
                 await couponsReady;
+
                 const [[coupon]] = await connection.query(
                     "SELECT * FROM coupons WHERE code = ? FOR UPDATE",
                     [couponCode]
                 );
+
                 if (!coupon || !coupon.is_active) {
                     throw new Error("Invalid coupon code");
                 }
-                if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+
+                if (
+                    coupon.expires_at &&
+                    new Date(coupon.expires_at) < new Date()
+                ) {
                     throw new Error("This coupon has expired");
                 }
-                if (coupon.max_uses && Number(coupon.used_count) >= Number(coupon.max_uses)) {
-                    throw new Error("This coupon has reached its usage limit");
+
+                if (
+                    coupon.max_uses &&
+                    Number(coupon.used_count) >= Number(coupon.max_uses)
+                ) {
+                    throw new Error(
+                        "This coupon has reached its usage limit"
+                    );
                 }
+
                 const [couponResult] = await connection.query(
                     "UPDATE coupons SET used_count = used_count + 1 WHERE code = ?",
                     [couponCode]
                 );
-                if (!couponResult.affectedRows) throw new Error("Coupon is no longer available");
+
+                if (!couponResult.affectedRows) {
+                    throw new Error(
+                        "Coupon is no longer available"
+                    );
+                }
             }
 
-            const id = `SR${Date.now().toString(36).toUpperCase()}${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
+            // -----------------------------
+            // CREATE ORDER ID
+            // -----------------------------
+
+            id =
+                `SR${Date.now().toString(36).toUpperCase()}` +
+                crypto.randomBytes(2).toString("hex").toUpperCase();
+
+            // -----------------------------
+            // INSERT ORDER
+            // -----------------------------
+
             await connection.query(
-                "INSERT INTO orders (id, user_id, items, address, delivery_charge, Total_Amount, status, product_ids, line_items, coupon_code, coupon_discount, discount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [id, userId, items, address, deliveryCharge, totalAmount, "placed", JSON.stringify(productIds), JSON.stringify(lineItems), couponCode || null, discount, discount]
+                `INSERT INTO orders
+                (
+                    id,
+                    user_id,
+                    items,
+                    address,
+                    delivery_charge,
+                    Total_Amount,
+                    status,
+                    product_ids,
+                    line_items,
+                    coupon_code,
+                    coupon_discount,
+                    discount
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    id,
+                    userId,
+                    items,
+                    address,
+                    deliveryCharge,
+                    totalAmount,
+                    "placed",
+                    JSON.stringify(productIds),
+                    JSON.stringify(lineItems),
+                    couponCode || null,
+                    discount,
+                    discount
+                ]
             );
+
             await connection.commit();
+
+            console.log(
+                `[ORDERS] Order created successfully: ${id}`
+            );
+
         } catch (error) {
-            if (transactionStarted) await connection.rollback();
+
+            if (transactionStarted) {
+                await connection.rollback();
+            }
+
             throw error;
+
         } finally {
+
+            // Correct MySQL2 connection release
             connection.release();
         }
 
-        // Send confirmation after responding so SMTP latency cannot hold up checkout.
+        // -----------------------------
+        // SEND CONFIRMATION EMAIL
+        // -----------------------------
+
         let emailError = null;
-        const confirmationRecipient = user.email || ORDER_NOTIFICATION_EMAIL;
+
+        const confirmationRecipient =
+            user.email || ORDER_NOTIFICATION_EMAIL;
+
         if (emailTransporter && confirmationRecipient) {
+
             sendOrderEmail({
-                    to: confirmationRecipient,
-                    name: user.name,
-                    id,
-                    items,
-                    subtotal,
-                    discount,
-                    totalAmount,
-                    deliveryCharge,
-                    address,
-                    couponCode
-                })
+                to: confirmationRecipient,
+                name: user.name,
+                id,
+                items,
+                subtotal,
+                discount,
+                totalAmount,
+                deliveryCharge,
+                address,
+                couponCode
+            })
                 .then((info) => {
-                    const ccNote = ORDER_NOTIFICATION_EMAIL && ORDER_NOTIFICATION_EMAIL.toLowerCase() !== confirmationRecipient.toLowerCase()
-                        ? ` (cc: ${ORDER_NOTIFICATION_EMAIL})`
-                        : "";
-                    console.log(`[ORDERS] Confirmation email sent. FROM: ${EMAIL_FROM} -> TO: ${confirmationRecipient}${ccNote}. messageId=${info && info.messageId}`);
+
+                    const ccNote =
+                        ORDER_NOTIFICATION_EMAIL &&
+                        ORDER_NOTIFICATION_EMAIL.toLowerCase() !==
+                        confirmationRecipient.toLowerCase()
+                            ? ` (cc: ${ORDER_NOTIFICATION_EMAIL})`
+                            : "";
+
+                    console.log(
+                        `[ORDERS] Confirmation email sent. ` +
+                        `FROM: ${EMAIL_FROM} -> ` +
+                        `TO: ${confirmationRecipient}` +
+                        `${ccNote}. ` +
+                        `messageId=${info && info.messageId}`
+                    );
+
                 })
-                .catch((err) => console.error("[ORDERS] Order confirmation email failed:", err.message));
+                .catch((err) => {
+
+                    console.error(
+                        "[ORDERS] Order confirmation email failed:",
+                        err.message
+                    );
+
+                });
+
         } else {
+
             emailError = !emailTransporter
                 ? "Email transporter not configured on server. Check EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env"
                 : "No order confirmation recipient is available";
+
             console.warn("[ORDERS]", emailError);
         }
 
-        // 4. RESPONSE
+        // -----------------------------
+        // RESPONSE
+        // -----------------------------
+
         res.status(201).json({
             id,
             user_id: userId,
@@ -2069,14 +2252,24 @@ app.post("/orders", async (req, res) => {
             delivery_charge: deliveryCharge,
             total_amount: totalAmount,
             status: "placed",
+
+            // Email is sent asynchronously
             emailSent: false,
-            emailQueued: !!(emailTransporter && confirmationRecipient),
+
+            emailQueued:
+                !!(emailTransporter && confirmationRecipient),
+
             email: confirmationRecipient || null,
-            emailError: emailError
+
+            emailError
         });
 
     } catch (error) {
-        console.error("Order creation failed:", error.message);
+
+        console.error(
+            "Order creation failed:",
+            error.message
+        );
 
         res.status(503).json({
             error: "Could not place order",
