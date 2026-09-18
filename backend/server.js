@@ -40,7 +40,8 @@ if (EMAIL_HOST && EMAIL_PORT && EMAIL_USER && EMAIL_PASS) {
         host: EMAIL_HOST,
         port: EMAIL_PORT,
         secure: Number(EMAIL_PORT) === 465,
-        auth: { user: EMAIL_USER, pass: EMAIL_PASS }
+        auth: { user: EMAIL_USER, pass: EMAIL_PASS },
+        from: EMAIL_FROM
     });
     emailTransporter.verify().then(
         () => {

@@ -1615,7 +1615,7 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
   const orderDiscount = offerDiscount + couponDiscount;
   const orderTotal = orderSubtotal - orderDiscount;
   const orderGrandTotal = orderTotal + deliveryCharge;
-  const activeCouponCode = activeOffer?.coupon_code || (couponApplied && appliedCoupon ? appliedCoupon.code : "");
+  const activeCouponCode = couponApplied && appliedCoupon ? appliedCoupon.code : "";
   let serverOrderId = null;
   let emailSent = false;
   let emailQueued = false;
@@ -1625,7 +1625,7 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
       const response = await fetch(`${API_URL}/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.id, items, productIds: cart.map((item) => item.id), lineItems: cart.map((item) => { const p = productById(item.id); return { id: item.id, name: p?.name || "Product", price: p?.price || 0, quantity: item.quantity, image: p?.image || "", discount: p?.discount || 0 }; }), address, state: document.querySelector("#customer-state").value.trim(), pincode: document.querySelector("#customer-pin").value.trim(), couponCode: activeCouponCode, deliveryCharge, subtotal: orderSubtotal, discount: orderDiscount, totalAmount: orderTotal }),
+        body: JSON.stringify({ userId: user.id, items, productIds: cart.map((item) => item.id), lineItems: cart.map((item) => { const p = productById(item.id); return { id: item.id, name: p?.name || "Product", price: p?.price || 0, quantity: item.quantity, image: p?.image || "", discount: p?.discount || 0 }; }), address, state: document.querySelector("#customer-state").value.trim(), pincode: document.querySelector("#customer-pin").value.trim(), couponCode: activeCouponCode, deliveryCharge, subtotal: orderSubtotal, discount: orderDiscount, totalAmount: orderGrandTotal }),
       });
       const data = await response.json().catch(() => ({ error: "Invalid response" }));
       if (response.ok) {
@@ -1649,7 +1649,7 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
           }),
         }).catch(() => {});
       } else {
-        showToast(data.error || "Could not place order", false);
+        showToast(data.detail || data.error || "Could not place order", false);
         checkoutSubmitting = false;
         if (submitButton) {
           submitButton.disabled = false;
@@ -1980,7 +1980,11 @@ document.querySelector("#forgot-password-link")?.addEventListener("click", async
     authError.textContent = "Enter your email address first, then click Forgot Password.";
     return;
   }
-  if (!email || !email.includes("@")) return;
+  if (!email || !email.includes("@")) {
+    authError.style.color = "#c15e52";
+    authError.textContent = "Enter a valid email address.";
+    return;
+  }
   try {
     const response = await fetch(`${API_URL}/auth/forgot-password`, {
       method: "POST",
