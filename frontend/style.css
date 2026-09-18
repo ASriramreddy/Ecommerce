@@ -441,6 +441,9 @@ body.auth-locked .auth-card > .close-button { display: none; }
 	.auth-card { padding: 30px 24px; }
 	body.auth-locked .auth-card { padding: 32px 24px; }
 	.checkout-card { padding: 30px 24px; }
+    .checkout-grid { grid-template-columns: 1fr; gap: 13px; }
+    .checkout-field.full { grid-column: auto; }
+    .checkout-card .primary-button { min-height: 48px; }
     .details-card { display: flex; flex-direction: column; max-height: 92vh; overflow-y: auto; }
     .details-image { min-height: 190px; max-height: 220px; }
     .details-content { padding: 24px 20px 26px; }

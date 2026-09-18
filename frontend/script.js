@@ -19,6 +19,7 @@ let appliedCoupon = null;
 let deliveryCharge = 0;
 let selectedState = "";
 let selectedCategory = "";
+let checkoutSubmitting = false;
 let wishlist = JSON.parse(localStorage.getItem("sriram-store-wishlist") || "[]");
 
 const productGrid = document.querySelector("#product-grid");
@@ -454,6 +455,7 @@ async function submitAuth(form, endpoint, payload) {
   const button = form.querySelector("button[type=submit]");
   button.disabled = true;
   authError.textContent = "";
+  authError.style.color = "#c15e52";
   try {
     const response = await fetch(`${API_URL}${endpoint}`, {
       method: "POST",
@@ -817,7 +819,10 @@ async function openCheckout() {
         if (district) document.querySelector("#customer-district").value = district;
         if (state) document.querySelector("#customer-state").value = state;
         if (country) document.querySelector("#customer-country").value = country;
-        if (pin) document.querySelector("#customer-pin").value = pin;
+        if (pin) {
+          document.querySelector("#customer-pin").value = pin;
+          if (/^\d{6}$/.test(pin)) await lookupPincode(pin);
+        }
         if (phone && !nameInput.value) nameInput.value = String(result.user?.name || "").trim();
         if (phone) phoneInput.value = phone;
       }
@@ -1585,8 +1590,16 @@ document.querySelector("#details-buy").addEventListener("click", () => {
 });
 document.querySelector("#checkout-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (checkoutSubmitting) return;
   const form = event.currentTarget;
   if (!form.checkValidity()) return form.reportValidity();
+  checkoutSubmitting = true;
+  const submitButton = form.querySelector("button[type=submit]");
+  const originalButtonText = submitButton?.innerHTML || "";
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.innerHTML = "Placing order...";
+  }
   const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
   const items = cart.reduce((sum, item) => sum + item.quantity, 0);
   const address = `${document.querySelector("#customer-address").value}, ${document.querySelector("#customer-city").value}, ${document.querySelector("#customer-district").value}, ${document.querySelector("#customer-state").value}, ${document.querySelector("#customer-pin").value}, ${document.querySelector("#customer-country").value}`;
@@ -1605,20 +1618,22 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
   const activeCouponCode = activeOffer?.coupon_code || (couponApplied && appliedCoupon ? appliedCoupon.code : "");
   let serverOrderId = null;
   let emailSent = false;
+  let emailQueued = false;
   let confirmationEmail = null;
   if (user) {
     try {
       const response = await fetch(`${API_URL}/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.id, items, productIds: cart.map((item) => item.id), lineItems: cart.map((item) => { const p = productById(item.id); return { id: item.id, name: p?.name || "Product", price: p?.price || 0, quantity: item.quantity, image: p?.image || "", discount: p?.discount || 0 }; }), address, couponCode: activeCouponCode, deliveryCharge, subtotal: orderSubtotal, discount: orderDiscount, totalAmount: orderTotal }),
+        body: JSON.stringify({ userId: user.id, items, productIds: cart.map((item) => item.id), lineItems: cart.map((item) => { const p = productById(item.id); return { id: item.id, name: p?.name || "Product", price: p?.price || 0, quantity: item.quantity, image: p?.image || "", discount: p?.discount || 0 }; }), address, state: document.querySelector("#customer-state").value.trim(), pincode: document.querySelector("#customer-pin").value.trim(), couponCode: activeCouponCode, deliveryCharge, subtotal: orderSubtotal, discount: orderDiscount, totalAmount: orderTotal }),
       });
       const data = await response.json().catch(() => ({ error: "Invalid response" }));
       if (response.ok) {
         serverOrderId = data.id;
         emailSent = !!data.emailSent;
+        emailQueued = !!data.emailQueued;
         confirmationEmail = data.email || (user && user.email) || null;
-        await fetch(`${API_URL}/auth/me`, {
+        fetch(`${API_URL}/auth/me`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1635,9 +1650,21 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
         }).catch(() => {});
       } else {
         showToast(data.error || "Could not place order", false);
+        checkoutSubmitting = false;
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.innerHTML = originalButtonText;
+        }
+        return;
       }
     } catch (error) {
       showToast("Could not connect to server", false);
+      checkoutSubmitting = false;
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.innerHTML = originalButtonText;
+      }
+      return;
     }
   }
   const localOrders = JSON.parse(localStorage.getItem(ordersStorageKey) || "[]");
@@ -1654,6 +1681,11 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
   form.reset();
   closeModal(checkoutModal);
   setCartOpen(false);
+  checkoutSubmitting = false;
+  if (submitButton) {
+    submitButton.disabled = false;
+    submitButton.innerHTML = originalButtonText;
+  }
   if (!user) {
     emailSent = false;
     confirmationEmail = null;
@@ -1672,6 +1704,8 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
   addNotification(`Order ${finalOrderId} placed successfully · ${items} item${items === 1 ? "" : "s"} · ${formatPrice(orderGrandTotal)}`);
   if (emailSent && confirmationEmail) {
     showToast(`Confirmation email sent to ${confirmationEmail}`);
+  } else if (emailQueued && confirmationEmail) {
+    showToast(`Order placed. Confirmation email is being sent to ${confirmationEmail}`);
   } else {
     showToast("Your order has been placed");
   }
@@ -1710,103 +1744,134 @@ document.querySelector("#order-edit-form").addEventListener("submit", async (eve
 document.querySelector("#login-tab").addEventListener("click", () => setAuthMode("login"));
 document.querySelector("#register-tab").addEventListener("click", () => setAuthMode("register"));
 
+let pincodeLookupSequence = 0;
+
+async function fetchJsonWithTimeout(url, timeoutMs = 4500) {
+  const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  const data = await response.json().catch(() => ({}));
+  return { response, data };
+}
+
 async function lookupPincode(pincode) {
   const statusEl = document.querySelector("#pincode-status");
   const districtEl = document.querySelector("#customer-district");
   const stateEl = document.querySelector("#customer-state");
   const cityEl = document.querySelector("#customer-city");
   const countryEl = document.querySelector("#customer-country");
+  const infoEl = document.querySelector("#delivery-charge-info");
+  const popup = document.querySelector("#pincode-popup");
 
+  pincode = String(pincode || "").replace(/\D/g, "").slice(0, 6);
   if (!/^\d{6}$/.test(pincode)) {
     statusEl.textContent = "";
+    statusEl.className = "pincode-status";
     return;
   }
 
+  const lookupId = ++pincodeLookupSequence;
   statusEl.textContent = "Looking up pincode...";
   statusEl.className = "pincode-status is-loading";
 
+  let details = null;
   try {
-    const response = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
-    const data = await response.json();
-
-    if (data && data[0] && data[0].Status === "Success" && data[0].PostOffice && data[0].PostOffice.length > 0) {
-      const postOffice = data[0].PostOffice[0];
-      districtEl.value = postOffice.District || "";
-      stateEl.value = postOffice.State || "";
-      countryEl.value = postOffice.Country || "India";
-      if (!cityEl.value && postOffice.Name) {
-        cityEl.value = postOffice.Name;
-      }
-      const areaName = postOffice.Name || postOffice.District;
-      statusEl.textContent = `📍 ${areaName}, ${postOffice.District}, ${postOffice.State}`;
-      statusEl.className = "pincode-status is-valid";
-      const popup = document.querySelector("#pincode-popup");
-      const areaEl = document.querySelector("#pincode-area");
-      const districtEl2 = document.querySelector("#pincode-district");
-      if (popup && areaEl && districtEl2) {
-        areaEl.textContent = `${postOffice.Name}${postOffice.Block ? `, ${postOffice.Block}` : ""}`;
-        districtEl2.textContent = `${postOffice.District}, ${postOffice.State}`;
-        popup.classList.add("show");
-        popup.setAttribute("aria-hidden", "false");
-      }
-      const state = postOffice.State || "";
-      selectedState = state;
-      const infoEl = document.querySelector("#delivery-charge-info");
-      if (state && infoEl) {
-        infoEl.textContent = "Checking delivery charges...";
-        infoEl.className = "delivery-charge-info is-loading";
-        try {
-          const chargeResponse = await fetch(`${API_URL}/delivery-charge/${encodeURIComponent(state)}`);
-          const chargeData = await chargeResponse.json().catch(() => ({}));
-          if (chargeResponse.ok && typeof chargeData.delivery_charge === "number") {
-            deliveryCharge = Number(chargeData.delivery_charge);
-            infoEl.textContent = chargeData.description ? `Delivery: ${formatPrice(deliveryCharge)} (${chargeData.description})` : `Delivery charge: ${formatPrice(deliveryCharge)}`;
-            infoEl.className = "delivery-charge-info is-valid";
-          } else {
-            deliveryCharge = 40;
-            infoEl.textContent = `Delivery charge: ${formatPrice(deliveryCharge)}`;
-            infoEl.className = "delivery-charge-info is-valid";
-          }
-        } catch (error) {
-          deliveryCharge = 40;
-          infoEl.textContent = `Delivery charge: ${formatPrice(deliveryCharge)}`;
-          infoEl.className = "delivery-charge-info is-valid";
-        }
-        renderCart();
-      } else if (infoEl) {
-        deliveryCharge = 40;
-        infoEl.textContent = `Delivery charge: ${formatPrice(deliveryCharge)}`;
-        infoEl.className = "delivery-charge-info is-valid";
-        renderCart();
-      }
-    } else {
-      statusEl.textContent = "Pincode not found. Please check and enter manually.";
-      statusEl.className = "pincode-status is-invalid";
-      deliveryCharge = 0;
-      selectedState = "";
-      const infoEl = document.querySelector("#delivery-charge-info");
-      if (infoEl) {
-        infoEl.textContent = "";
-        infoEl.className = "delivery-charge-info";
-      }
-      renderCart();
+    const { response, data } = await fetchJsonWithTimeout(`https://api.postalpincode.in/pincode/${encodeURIComponent(pincode)}`);
+    const result = data?.[0];
+    if (response.ok && result?.Status === "Success" && Array.isArray(result.PostOffice) && result.PostOffice.length) {
+      const postOffice = result.PostOffice.find((office) => office?.DeliveryStatus === "Delivery") || result.PostOffice[0];
+      details = {
+        pincode,
+        area: postOffice.Name || "",
+        district: postOffice.District || "",
+        state: postOffice.State || "",
+        country: postOffice.Country || "India",
+        block: postOffice.Block || ""
+      };
     }
   } catch (error) {
-    statusEl.textContent = "Could not verify pincode. Please enter details manually.";
+    console.error("Direct pincode lookup failed:", error.message);
+  }
+
+  if (!details) {
+    try {
+      const { response, data } = await fetchJsonWithTimeout(`${API_URL}/pincode/${encodeURIComponent(pincode)}`);
+      if (response.ok && data?.area && data?.state) {
+        details = data;
+      }
+    } catch (error) {
+      console.error("Pincode proxy lookup failed:", error.message);
+    }
+  }
+
+  if (lookupId !== pincodeLookupSequence) return;
+
+  if (!details) {
+    statusEl.textContent = "Pincode lookup is temporarily unavailable. You can enter the location manually.";
     statusEl.className = "pincode-status is-invalid";
+    selectedState = stateEl.value.trim();
     deliveryCharge = 0;
-    selectedState = "";
-    const infoEl = document.querySelector("#delivery-charge-info");
     if (infoEl) {
       infoEl.textContent = "";
       infoEl.className = "delivery-charge-info";
     }
+    if (popup) {
+      popup.classList.remove("show");
+      popup.setAttribute("aria-hidden", "true");
+    }
     renderCart();
+    return;
   }
+
+  districtEl.value = details.district || "";
+  stateEl.value = details.state || "";
+  countryEl.value = details.country || "India";
+  if (details.area || details.district) {
+    cityEl.value = details.area || details.district;
+  }
+  const areaName = details.area || details.district;
+  statusEl.textContent = `Verified: ${areaName}, ${details.district}, ${details.state}`;
+  statusEl.className = "pincode-status is-valid";
+  selectedState = details.state || "";
+
+  if (popup) {
+    const areaEl = document.querySelector("#pincode-area");
+    const districtEl2 = document.querySelector("#pincode-district");
+    if (areaEl && districtEl2) {
+      areaEl.textContent = `${details.area}${details.block ? `, ${details.block}` : ""}`;
+      districtEl2.textContent = `${details.district}, ${details.state}`;
+    }
+    popup.classList.add("show");
+    popup.setAttribute("aria-hidden", "false");
+  }
+
+  if (infoEl) {
+    infoEl.textContent = "Checking delivery charges...";
+    infoEl.className = "delivery-charge-info is-loading";
+  }
+
+  try {
+    const chargeResponse = await fetch(`${API_URL}/delivery-charge/${encodeURIComponent(selectedState)}`);
+    const chargeData = await chargeResponse.json().catch(() => ({}));
+    if (chargeResponse.ok && typeof chargeData.delivery_charge === "number") {
+      deliveryCharge = Number(chargeData.delivery_charge);
+      infoEl.textContent = chargeData.description ? `Delivery: ${formatPrice(deliveryCharge)} (${chargeData.description})` : `Delivery charge: ${formatPrice(deliveryCharge)}`;
+      infoEl.className = "delivery-charge-info is-valid";
+    } else {
+      deliveryCharge = 40;
+      infoEl.textContent = `Delivery charge: ${formatPrice(deliveryCharge)}`;
+      infoEl.className = "delivery-charge-info is-valid";
+    }
+  } catch (error) {
+    deliveryCharge = 40;
+    infoEl.textContent = `Delivery charge: ${formatPrice(deliveryCharge)}`;
+    infoEl.className = "delivery-charge-info is-valid";
+  }
+
+  renderCart();
 }
 
 document.querySelector("#customer-pin").addEventListener("input", (event) => {
-  const pincode = event.target.value.trim();
+  const pincode = event.target.value.replace(/\D/g, "").slice(0, 6);
+  event.target.value = pincode;
   if (/^\d{6}$/.test(pincode)) {
     lookupPincode(pincode);
   } else {
@@ -1839,6 +1904,8 @@ document.querySelector("#customer-pin").addEventListener("focus", () => {
 });
 
 document.querySelector("#customer-pin").addEventListener("blur", () => {
+  const pincode = document.querySelector("#customer-pin").value.trim();
+  if (/^\d{6}$/.test(pincode)) lookupPincode(pincode);
   setTimeout(() => {
     const popup = document.querySelector("#pincode-popup");
     if (popup && document.activeElement?.id !== "customer-pin") {
@@ -1847,6 +1914,54 @@ document.querySelector("#customer-pin").addEventListener("blur", () => {
     }
   }, 200);
 });
+
+document.querySelector("#customer-state").addEventListener("input", async (event) => {
+  const state = event.target.value.trim();
+  const infoEl = document.querySelector("#delivery-charge-info");
+  selectedState = state;
+
+  if (!state) {
+    deliveryCharge = 0;
+    if (infoEl) {
+      infoEl.textContent = "";
+      infoEl.className = "delivery-charge-info";
+    }
+    renderCart();
+    return;
+  }
+
+  if (infoEl) {
+    infoEl.textContent = "Checking delivery charges...";
+    infoEl.className = "delivery-charge-info is-loading";
+  }
+
+  try {
+    const response = await fetch(`${API_URL}/delivery-charge/${encodeURIComponent(state)}`);
+    const data = await response.json().catch(() => ({}));
+    if (response.ok && typeof data.delivery_charge === "number") {
+      deliveryCharge = Number(data.delivery_charge);
+      if (infoEl) {
+        infoEl.textContent = data.description ? `Delivery: ${formatPrice(deliveryCharge)} (${data.description})` : `Delivery charge: ${formatPrice(deliveryCharge)}`;
+        infoEl.className = "delivery-charge-info is-valid";
+      }
+    } else {
+      deliveryCharge = 40;
+      if (infoEl) {
+        infoEl.textContent = `Delivery charge: ${formatPrice(deliveryCharge)}`;
+        infoEl.className = "delivery-charge-info is-valid";
+      }
+    }
+  } catch (error) {
+    deliveryCharge = 40;
+    if (infoEl) {
+      infoEl.textContent = `Delivery charge: ${formatPrice(deliveryCharge)}`;
+      infoEl.className = "delivery-charge-info is-valid";
+    }
+  }
+
+  renderCart();
+});
+
  loginForm.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!loginForm.checkValidity()) return loginForm.reportValidity();
@@ -1857,7 +1972,14 @@ document.querySelector("#customer-pin").addEventListener("blur", () => {
 });
 document.querySelector("#forgot-password-link")?.addEventListener("click", async (event) => {
   event.preventDefault();
-  const email = prompt("Enter your email to reset your password:");
+  const emailInput = document.querySelector("#login-email");
+  const email = emailInput.value.trim().toLowerCase();
+  authError.textContent = "";
+  if (!email) {
+    emailInput.focus();
+    authError.textContent = "Enter your email address first, then click Forgot Password.";
+    return;
+  }
   if (!email || !email.includes("@")) return;
   try {
     const response = await fetch(`${API_URL}/auth/forgot-password`, {
@@ -1867,12 +1989,15 @@ document.querySelector("#forgot-password-link")?.addEventListener("click", async
     });
     const data = await response.json().catch(() => ({ error: "Invalid response" }));
     if (response.ok) {
-      alert(data.message || "Password reset email sent");
+      authError.style.color = "var(--green)";
+      authError.textContent = data.message || "If an account exists, reset instructions will be sent to your email.";
     } else {
-      alert(data.error || "Could not process password reset");
+      authError.style.color = "#c15e52";
+      authError.textContent = data.error || "Could not process password reset";
     }
   } catch (error) {
-    alert("Could not connect to server");
+    authError.style.color = "#c15e52";
+    authError.textContent = "Could not connect to server";
   }
 });
 registerForm.addEventListener("submit", (event) => {

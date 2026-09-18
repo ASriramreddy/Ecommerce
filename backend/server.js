@@ -30,7 +30,8 @@ if (fs.existsSync(projectRootEnv)) {
 const EMAIL_HOST = process.env.EMAIL_HOST;
 const EMAIL_PORT = Number(process.env.EMAIL_PORT);
 const EMAIL_USER = process.env.EMAIL_USER;
-const EMAIL_PASS = process.env.EMAIL_PASS;
+const EMAIL_PASS = process.env.EMAIL_PASS || process.env.EMAIL_PASSWORD;
+const EMAIL_FROM = process.env.EMAIL_FROM || EMAIL_USER;
 const ORDER_NOTIFICATION_EMAIL = (process.env.ORDER_NOTIFICATION_EMAIL || process.env.EMAIL_USER || "").trim();
 
 let emailTransporter = null;
@@ -51,6 +52,46 @@ if (EMAIL_HOST && EMAIL_PORT && EMAIL_USER && EMAIL_PASS) {
     console.warn("Email not configured. Set EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env to enable order confirmation emails.");
 }
 
+async function fetchPincodeDetails(pincode) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    try {
+        const response = await fetch(`https://api.postalpincode.in/pincode/${encodeURIComponent(pincode)}`, {
+            signal: controller.signal,
+            headers: { Accept: "application/json" }
+        });
+        if (!response.ok) {
+            throw new Error(`Pincode API returned ${response.status}`);
+        }
+        const data = await response.json();
+        const result = Array.isArray(data) ? data[0] : null;
+        if (result?.Status !== "Success" || !Array.isArray(result.PostOffice) || !result.PostOffice.length) {
+            return null;
+        }
+        const postOffice = result.PostOffice.find((office) => office?.DeliveryStatus === "Delivery") || result.PostOffice[0];
+        return {
+            pincode,
+            area: postOffice.Name || "",
+            district: postOffice.District || "",
+            state: postOffice.State || "",
+            country: postOffice.Country || "India",
+            block: postOffice.Block || ""
+        };
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+    })[character]);
+}
+
 async function sendOrderEmail({ to, name, id, items, subtotal, discount, totalAmount, deliveryCharge, address, couponCode }) {
     if (!emailTransporter) {
         throw new Error("Email transporter not configured. Check EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env");
@@ -60,17 +101,27 @@ async function sendOrderEmail({ to, name, id, items, subtotal, discount, totalAm
     const discountText = fmt(discount);
     const totalText = fmt(totalAmount);
     const deliveryText = fmt(deliveryCharge);
-    const couponRow = couponCode ? `<tr><td style="padding:10px 14px;color:#666;">Coupon</td><td style="padding:10px 14px;text-align:right;"><strong>${couponCode}</strong></td></tr>` : "";
+    const safe = {
+        name: escapeHtml(name),
+        id: escapeHtml(id),
+        items: escapeHtml(items),
+        address: escapeHtml(address),
+        couponCode: escapeHtml(couponCode)
+    };
+    const couponRow = couponCode ? `<tr><td style="padding:10px 14px;color:#666;">Coupon</td><td style="padding:10px 14px;text-align:right;"><strong>${safe.couponCode}</strong></td></tr>` : "";
     const discountRow = Number(discount) > 0 ? `<tr><td style="padding:10px 14px;color:#666;">Discount</td><td style="padding:10px 14px;text-align:right;color:#2c5f2d;">-&#8377;${Number(discount).toLocaleString("en-IN")}</td></tr>` : "";
 
     const customerEmail = String(to || "").trim();
     const primaryRecipient = customerEmail || ORDER_NOTIFICATION_EMAIL;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(primaryRecipient)) {
+        throw new Error("A valid order confirmation recipient is required");
+    }
     const ccList = ORDER_NOTIFICATION_EMAIL && customerEmail && ORDER_NOTIFICATION_EMAIL.toLowerCase() !== customerEmail.toLowerCase()
         ? [ORDER_NOTIFICATION_EMAIL]
         : [];
 
     const mailOptions = {
-        from: `Sriram Store <${EMAIL_USER}>`,
+        from: `Sriram Store <${EMAIL_FROM}>`,
         to: primaryRecipient,
         cc: ccList,
         replyTo: ORDER_NOTIFICATION_EMAIL || customerEmail || undefined,
@@ -86,17 +137,17 @@ async function sendOrderEmail({ to, name, id, items, subtotal, discount, totalAm
                     <h1 style="margin:0;color:#fff;font-size:22px;letter-spacing:0.3px;">Order Confirmed!</h1>
                 </div>
                 <div style="background:#fff;padding:24px 22px;border:1px solid #eee;border-top:none;border-radius:0 0 8px 8px;">
-                    <p style="margin:0 0 14px;">Hello <strong>${name}</strong>,</p>
+                    <p style="margin:0 0 14px;">Hello <strong>${safe.name}</strong>,</p>
                     <p style="margin:0 0 18px;color:#444;">Thank you for your order with <strong>Sriram Store</strong>. Below is your complete payment summary.</p>
                     <table style="width:100%;border-collapse:collapse;margin:0 0 18px;background:#f7faf5;border:1px solid #e3ecdc;border-radius:8px;">
-                        <tr><td style="padding:10px 14px;color:#666;">Order ID</td><td style="padding:10px 14px;text-align:right;"><strong>${id}</strong></td></tr>
-                        <tr><td style="padding:10px 14px;color:#666;">Items</td><td style="padding:10px 14px;text-align:right;"><strong>${items}</strong></td></tr>
+                        <tr><td style="padding:10px 14px;color:#666;">Order ID</td><td style="padding:10px 14px;text-align:right;"><strong>${safe.id}</strong></td></tr>
+                        <tr><td style="padding:10px 14px;color:#666;">Items</td><td style="padding:10px 14px;text-align:right;"><strong>${safe.items}</strong></td></tr>
                         ${couponRow}
                         <tr><td style="padding:10px 14px;color:#666;">Subtotal</td><td style="padding:10px 14px;text-align:right;">&#8377;${Number(subtotal || 0).toLocaleString("en-IN")}</td></tr>
                         ${discountRow}
                         <tr><td style="padding:10px 14px;color:#666;">Delivery Charge</td><td style="padding:10px 14px;text-align:right;">&#8377;${Number(deliveryCharge).toLocaleString("en-IN")}</td></tr>
                         <tr style="background:#eaf3e3;"><td style="padding:14px;color:#2c5f2d;font-size:15px;"><strong>Total Paid</strong></td><td style="padding:14px;text-align:right;color:#2c5f2d;font-size:20px;"><strong>&#8377;${Number(totalAmount).toLocaleString("en-IN")}</strong></td></tr>
-                        <tr><td style="padding:10px 14px;color:#666;vertical-align:top;">Delivery Address</td><td style="padding:10px 14px;text-align:right;">${address}</td></tr>
+                        <tr><td style="padding:10px 14px;color:#666;vertical-align:top;">Delivery Address</td><td style="padding:10px 14px;text-align:right;">${safe.address}</td></tr>
                     </table>
                     <p style="margin:0 0 8px;">Your order has been successfully placed and will be processed shortly.</p>
                     <p style="margin:0;color:#666;font-size:13px;">Thank you for shopping with us!</p>
@@ -138,6 +189,23 @@ fs.mkdirSync(uploadDirectory, { recursive: true });
 
 app.use(cors());
 app.use(express.json());
+
+app.get("/pincode/:pincode", async (req, res) => {
+    const pincode = String(req.params.pincode || "").trim();
+    if (!/^\d{6}$/.test(pincode)) {
+        return res.status(400).json({ error: "Valid 6-digit PIN code is required" });
+    }
+    try {
+        const details = await fetchPincodeDetails(pincode);
+        if (!details) {
+            return res.status(404).json({ error: "Pincode not found" });
+        }
+        res.json(details);
+    } catch (error) {
+        console.error("Pincode lookup failed:", error.message);
+        res.status(502).json({ error: "Could not verify pincode" });
+    }
+});
 
 app.use(express.static(path.join(__dirname, "..")));
 
@@ -1638,7 +1706,7 @@ app.post("/test-email", async (req, res) => {
     if (!emailTransporter) return res.status(503).json({ error: "Email transporter not configured" });
     try {
         const info = await emailTransporter.sendMail({
-            from: `Sriram Store <${EMAIL_USER}>`,
+            from: `Sriram Store <${EMAIL_FROM}>`,
             to,
             subject: "Test Email from Sriram Store",
             text: "If you see this, your email configuration is working correctly.",
@@ -1871,52 +1939,103 @@ app.post("/orders", async (req, res) => {
     const userId = Number(body.userId);
     const items = Number(body.items);
     const address = String(body.address || "").trim();
+    const state = String(body.state || "").trim();
+    const pincode = String(body.pincode || "").trim();
     const couponCode = String(body.couponCode || "").trim().toUpperCase();
     const deliveryCharge = Number(body.deliveryCharge || 0);
     const subtotal = Number(body.subtotal || 0);
     const discount = Number(body.discount || 0);
-    const productIds = Array.isArray(body.productIds) ? body.productIds.map(Number).filter((id) => Number.isInteger(id) && id > 0) : [];
-    const totalAmount = Number(body.totalAmount || 0) + deliveryCharge;
+    const requestedTotal = Number(body.totalAmount);
+    const productIds = Array.isArray(body.productIds)
+        ? body.productIds.map(Number).filter((id) => Number.isInteger(id) && id > 0)
+        : [];
+    const rawLineItems = Array.isArray(body.lineItems) ? body.lineItems : [];
+    const lineItems = rawLineItems.map((item) => {
+        if (!item || typeof item !== "object") return null;
+        return {
+            id: Number(item.id),
+            name: String(item.name || "").trim(),
+            price: Number(item.price || 0),
+            quantity: Number(item.quantity || 0),
+            image: String(item.image || "").trim(),
+            discount: Number(item.discount || 0)
+        };
+    });
+    const subtotalAfterDiscount = subtotal - discount;
+    const totalAmount = subtotalAfterDiscount + deliveryCharge;
     console.log(`[ORDERS] New order request: user=${userId} items=${items} subtotal=${subtotal} discount=${discount} delivery=${deliveryCharge} total=${totalAmount}`);
-    if (!Number.isInteger(userId) || userId < 1 || !Number.isInteger(items) || items < 1 || !address) return res.status(400).json({ error: "Valid user id, items, and address are required" });
+    if (
+        !Number.isInteger(userId) || userId < 1 ||
+        !Number.isInteger(items) || items < 1 ||
+        !address || !state || !/^\d{6}$/.test(pincode) ||
+        !Number.isFinite(subtotal) || subtotal < 0 ||
+        !Number.isFinite(discount) || discount < 0 || discount > subtotal ||
+        !Number.isFinite(deliveryCharge) || deliveryCharge < 0 ||
+        !Number.isFinite(requestedTotal) || Math.abs(requestedTotal - subtotalAfterDiscount) > 0.01 ||
+        !productIds.length ||
+        rawLineItems.length !== lineItems.length ||
+        !lineItems.length ||
+        lineItems.some((item) => !Number.isInteger(item.id) || item.id < 1 || !item.name || !Number.isFinite(item.quantity) || item.quantity < 1 || !Number.isFinite(item.price) || item.price < 0) ||
+        lineItems.reduce((sum, item) => sum + item.quantity, 0) !== items
+    ) {
+        return res.status(400).json({ error: "Valid user, items, address, pincode, state, and totals are required" });
+    }
     try {
         await databaseReady;
         await ordersReady;
-        if (couponCode) {
-            await couponsReady;
-            const [[coupon]] = await db.promise().query("SELECT * FROM coupons WHERE code = ?", [couponCode]);
-            if (!coupon || !coupon.is_active) return res.status(400).json({ error: "Invalid coupon code" });
-            if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) return res.status(400).json({ error: "This coupon has expired" });
-            if (coupon.max_uses && coupon.used_count >= coupon.max_uses) return res.status(400).json({ error: "This coupon has reached its usage limit" });
-            await db.promise().query("UPDATE coupons SET used_count = used_count + 1 WHERE code = ?", [couponCode]);
-        }
-        const id = `SR${Date.now().toString().slice(-6)}`;
-
-        const lineItems = Array.isArray(body.lineItems) ? body.lineItems : [];
-
-        // 1. SAVE ORDER
-        await db.promise().query(
-    "INSERT INTO orders (id, user_id, items, address, delivery_charge, Total_Amount, status, product_ids, line_items, coupon_code, coupon_discount, discount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [id, userId, items, address, deliveryCharge, totalAmount, "placed", JSON.stringify(productIds), JSON.stringify(lineItems), couponCode || null, discount, discount]
-);
-
-        // 2. GET USER EMAIL
         const [[user]] = await db.promise().query(
-    "SELECT name, email FROM users WHERE id = ?",
-    [userId]
-);
-console.log("USER FROM DATABASE:", user);
-console.log("USER EMAIL:", user?.email);
+            "SELECT name, email FROM users WHERE id = ?",
+            [userId]
+        );
+        if (!user) return res.status(404).json({ error: "User not found" });
 
-        console.log(`[ORDERS] User lookup result:`, user);
+        const connection = await db.getConnection();
+        let transactionStarted = false;
+        try {
+            await connection.beginTransaction();
+            transactionStarted = true;
 
-        // 3. SEND ORDER CONFIRMATION EMAIL before responding so the result is accurate.
-        let emailSent = false;
+            if (couponCode) {
+                await couponsReady;
+                const [[coupon]] = await connection.query(
+                    "SELECT * FROM coupons WHERE code = ? FOR UPDATE",
+                    [couponCode]
+                );
+                if (!coupon || !coupon.is_active) {
+                    throw new Error("Invalid coupon code");
+                }
+                if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+                    throw new Error("This coupon has expired");
+                }
+                if (coupon.max_uses && Number(coupon.used_count) >= Number(coupon.max_uses)) {
+                    throw new Error("This coupon has reached its usage limit");
+                }
+                const [couponResult] = await connection.query(
+                    "UPDATE coupons SET used_count = used_count + 1 WHERE code = ?",
+                    [couponCode]
+                );
+                if (!couponResult.affectedRows) throw new Error("Coupon is no longer available");
+            }
+
+            const id = `SR${Date.now().toString(36).toUpperCase()}${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
+            await connection.query(
+                "INSERT INTO orders (id, user_id, items, address, delivery_charge, Total_Amount, status, product_ids, line_items, coupon_code, coupon_discount, discount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [id, userId, items, address, deliveryCharge, totalAmount, "placed", JSON.stringify(productIds), JSON.stringify(lineItems), couponCode || null, discount, discount]
+            );
+            await connection.commit();
+        } catch (error) {
+            if (transactionStarted) await connection.rollback();
+            throw error;
+        } finally {
+            connection.release();
+        }
+
+        // Send confirmation after responding so SMTP latency cannot hold up checkout.
         let emailError = null;
-        if (emailTransporter && user && user.email) {
-            try {
-                const info = await sendOrderEmail({
-                    to: user.email,
+        const confirmationRecipient = user.email || ORDER_NOTIFICATION_EMAIL;
+        if (emailTransporter && confirmationRecipient) {
+            sendOrderEmail({
+                    to: confirmationRecipient,
                     name: user.name,
                     id,
                     items,
@@ -1926,21 +2045,18 @@ console.log("USER EMAIL:", user?.email);
                     deliveryCharge,
                     address,
                     couponCode
-                });
-                emailSent = true;
-                const actualRecipient = user.email;
-                const ccNote = ORDER_NOTIFICATION_EMAIL && ORDER_NOTIFICATION_EMAIL.toLowerCase() !== user.email.toLowerCase()
-                    ? ` (cc: ${ORDER_NOTIFICATION_EMAIL})`
-                    : "";
-                console.log(`[ORDERS] Confirmation email sent. FROM: ${EMAIL_USER} -> TO: ${actualRecipient}${ccNote}. messageId=${info && info.messageId}`);
-            } catch (err) {
-                emailError = `Order confirmation email failed: ${err.message}`;
-                console.error("[ORDERS]", emailError);
-            }
+                })
+                .then((info) => {
+                    const ccNote = ORDER_NOTIFICATION_EMAIL && ORDER_NOTIFICATION_EMAIL.toLowerCase() !== confirmationRecipient.toLowerCase()
+                        ? ` (cc: ${ORDER_NOTIFICATION_EMAIL})`
+                        : "";
+                    console.log(`[ORDERS] Confirmation email sent. FROM: ${EMAIL_FROM} -> TO: ${confirmationRecipient}${ccNote}. messageId=${info && info.messageId}`);
+                })
+                .catch((err) => console.error("[ORDERS] Order confirmation email failed:", err.message));
         } else {
             emailError = !emailTransporter
                 ? "Email transporter not configured on server. Check EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env"
-                : "User has no email on file";
+                : "No order confirmation recipient is available";
             console.warn("[ORDERS]", emailError);
         }
 
@@ -1953,8 +2069,9 @@ console.log("USER EMAIL:", user?.email);
             delivery_charge: deliveryCharge,
             total_amount: totalAmount,
             status: "placed",
-            emailSent: emailSent,
-            email: user ? user.email : null,
+            emailSent: false,
+            emailQueued: !!(emailTransporter && confirmationRecipient),
+            email: confirmationRecipient || null,
             emailError: emailError
         });
 
