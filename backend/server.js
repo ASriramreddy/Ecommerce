@@ -44,11 +44,23 @@ if (EMAIL_HOST && EMAIL_PORT && EMAIL_USER && EMAIL_PASS) {
         from: EMAIL_FROM
     });
     emailTransporter.verify().then(
-        () => {
-            console.log(`Email transporter verified. Sending as: ${EMAIL_USER}. Order notifications go to: ${ORDER_NOTIFICATION_EMAIL || "(unset)"}`);
-        },
-        (err) => console.error("Email transporter verification failed:", err.message)
-    );
+    () => {
+        console.log("=================================");
+        console.log("[EMAIL] Brevo SMTP connected successfully");
+        console.log("[EMAIL] Host:", EMAIL_HOST);
+        console.log("[EMAIL] Port:", EMAIL_PORT);
+        console.log("[EMAIL] User:", EMAIL_USER);
+        console.log("[EMAIL] From:", EMAIL_FROM);
+        console.log("[EMAIL] Password configured:", !!EMAIL_PASS);
+        console.log("=================================");
+    },
+    (err) => {
+        console.error("=================================");
+        console.error("[EMAIL] Brevo SMTP connection FAILED");
+        console.error("[EMAIL] Error:", err.message);
+        console.error("=================================");
+    }
+);
 } else {
     console.warn("Email not configured. Set EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env to enable order confirmation emails.");
 }
@@ -2186,6 +2198,7 @@ app.post("/orders", async (req, res) => {
         // SEND CONFIRMATION EMAIL
         // -----------------------------
 
+        let emailSent = false;
         let emailError = null;
 
         const confirmationRecipient =
@@ -2193,44 +2206,25 @@ app.post("/orders", async (req, res) => {
 
         if (emailTransporter && confirmationRecipient) {
 
-            sendOrderEmail({
-                to: confirmationRecipient,
-                name: user.name,
-                id,
-                items,
-                subtotal,
-                discount,
-                totalAmount,
-                deliveryCharge,
-                address,
-                couponCode
-            })
-                .then((info) => {
-
-                    const ccNote =
-                        ORDER_NOTIFICATION_EMAIL &&
-                        ORDER_NOTIFICATION_EMAIL.toLowerCase() !==
-                        confirmationRecipient.toLowerCase()
-                            ? ` (cc: ${ORDER_NOTIFICATION_EMAIL})`
-                            : "";
-
-                    console.log(
-                        `[ORDERS] Confirmation email sent. ` +
-                        `FROM: ${EMAIL_FROM} -> ` +
-                        `TO: ${confirmationRecipient}` +
-                        `${ccNote}. ` +
-                        `messageId=${info && info.messageId}`
-                    );
-
-                })
-                .catch((err) => {
-
-                    console.error(
-                        "[ORDERS] Order confirmation email failed:",
-                        err.message
-                    );
-
+            try {
+                const info = await sendOrderEmail({
+                    to: confirmationRecipient,
+                    name: user.name,
+                    id,
+                    items,
+                    subtotal,
+                    discount,
+                    totalAmount,
+                    deliveryCharge,
+                    address,
+                    couponCode
                 });
+                emailSent = true;
+                console.log(`[ORDERS] Confirmation email sent to ${confirmationRecipient}. messageId=${info?.messageId}`);
+            } catch (err) {
+                emailError = `Order confirmation email failed: ${err.message}`;
+                console.error("[ORDERS]", emailError);
+            }
 
         } else {
 
@@ -2254,12 +2248,8 @@ app.post("/orders", async (req, res) => {
             total_amount: totalAmount,
             status: "placed",
 
-            // Email is sent asynchronously
-            emailSent: false,
-
-            emailQueued:
-                !!(emailTransporter && confirmationRecipient),
-
+            emailSent,
+            emailQueued: false,
             email: confirmationRecipient || null,
 
             emailError
