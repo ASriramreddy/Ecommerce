@@ -1,3 +1,16 @@
+const API_BASE = "https://ecommerce-1-r5m4.onrender.com";
+
+const api = {
+    async get(path) {
+        const response = await fetch(API_BASE + path);
+
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+
+        return response.json();
+    }
+}; 
 const API_URL = "https://ecommerce-1-r5m4.onrender.com";
 let products = [];
 let cart = [];
@@ -6,6 +19,7 @@ let appliedCoupon = null;
 let deliveryCharge = 0;
 let selectedState = "";
 let selectedCategory = "";
+let checkoutSubmitting = false;
 let wishlist = JSON.parse(localStorage.getItem("sriram-store-wishlist") || "[]");
 
 const productGrid = document.querySelector("#product-grid");
@@ -37,7 +51,9 @@ const discountFor = (product) => Math.min(100, Math.max(0, Number(product.discou
 const finalPrice = (product) => Number(product.price) * (1 - discountFor(product) / 100);
 const imageFor = (product) => {
   if (typeof product.image === "string" && /^https?:\/\//.test(product.image)) return product.image;
-  if (typeof product.image === "string" && product.image.startsWith("/")) return `${apiUrl}${product.image}`;
+  if (typeof product.image === "string" && product.image.startsWith("/")) {
+    return `${API_URL}${product.image}`;
+  }
   const imageName = product.name.toLowerCase().includes("tomato") ? "tomato" : product.name.toLowerCase().includes("mango") ? "mango" : product.name.toLowerCase().includes("carrot") ? "carrot" : "";
   return imageName ? `/images/${imageName}.jpg` : "";
 };
@@ -97,6 +113,58 @@ function renderNotifications() {
   });
 }
 
+let serverNotificationTimer = null;
+let orderRefreshTimer = null;
+
+async function loadServerNotifications() {
+  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+  if (!user?.id) return;
+  try {
+    const response = await fetch(`${API_URL}/notifications?userId=${encodeURIComponent(user.id)}`);
+    if (!response.ok) return;
+    const serverNotifications = await response.json();
+    if (!Array.isArray(serverNotifications)) return;
+    const existingNotifications = getNotifications();
+    const localNotifications = existingNotifications.filter((notification) => !String(notification.id).startsWith("server-"));
+    const readServerNotifications = new Map(
+      existingNotifications
+        .filter((notification) => String(notification.id).startsWith("server-") && notification.read)
+        .map((notification) => [String(notification.id), true])
+    );
+    const merged = serverNotifications.map((notification) => ({
+      id: `server-${notification.id}`,
+      message: notification.message,
+      time: notification.created_at,
+      read: readServerNotifications.has(`server-${notification.id}`)
+    }));
+    localStorage.setItem(notificationsStorageKey, JSON.stringify([...merged, ...localNotifications].slice(0, 50)));
+    renderNotifications();
+  } catch (error) {
+    console.error("Could not load user notifications:", error.message);
+  }
+}
+
+function startServerNotificationPolling() {
+  if (serverNotificationTimer) clearInterval(serverNotificationTimer);
+  loadServerNotifications();
+  serverNotificationTimer = setInterval(loadServerNotifications, 15000);
+}
+
+function stopServerNotificationPolling() {
+  if (serverNotificationTimer) clearInterval(serverNotificationTimer);
+  serverNotificationTimer = null;
+}
+
+function startOrderRefresh() {
+  if (orderRefreshTimer) clearInterval(orderRefreshTimer);
+  orderRefreshTimer = setInterval(renderOrders, 15000);
+}
+
+function stopOrderRefresh() {
+  if (orderRefreshTimer) clearInterval(orderRefreshTimer);
+  orderRefreshTimer = null;
+}
+
 function getEstimatedDeliveryDays() {
   if (!selectedState) return 3;
   return getEstimatedDeliveryDaysForState(selectedState);
@@ -114,6 +182,113 @@ function renderStars(rating) {
   const half = (rating || 0) % 1 >= 0.5 ? 1 : 0;
   const empty = 5 - full - half;
   return "★".repeat(full) + (half ? "½" : "") + "☆".repeat(empty);
+}
+
+function productUnit(product) {
+  const source = `${product?.name || ""} ${product?.description || ""}`;
+  const match = source.match(/(?:^|\s)(\d+\s*\/\s*\d+|\d+(?:\.\d+)?)\s*(kg|g|grams?)(?=\s|$|[),.-])/i);
+  if (match) {
+    const rawAmount = match[1].replace(/\s/g, "");
+    const amount = rawAmount.includes("/")
+      ? rawAmount.split("/").reduce((numerator, value, index) => index ? numerator / Number(value) : Number(value), 0)
+      : Number(rawAmount);
+    const unit = match[2].toLowerCase() === "kg" ? "kg" : "g";
+    const displayAmount = rawAmount === "1/2" || amount === 0.5 ? "1/2" : amount;
+    return `${displayAmount} ${unit}`;
+  }
+
+  const category = String(product?.category || "").toLowerCase();
+  if (category.includes("sweet")) return "1/2 kg";
+  if (category.includes("snack")) return "200 g";
+  return "1 pack";
+}
+
+async function loadProductReviews(productId) {
+  try {
+    const [reviewsRes, ratingRes] = await Promise.all([
+      fetch(`${API_URL}/products/${productId}/reviews`).then(r => r.json().catch(() => [])),
+      fetch(`${API_URL}/products/${productId}/rating`).then(r => r.json().catch(() => ({ avgRating: 0, reviewCount: 0 })))
+    ]);
+    const reviews = Array.isArray(reviewsRes) ? reviewsRes : [];
+    const rating = ratingRes?.avgRating || 0;
+    const count = ratingRes?.reviewCount || 0;
+    renderReviews(reviews, rating, count);
+  } catch (error) {
+    console.error("Could not load reviews:", error.message);
+    renderReviews([], 0, 0);
+  }
+}
+
+function renderReviews(reviews, avgRating, count) {
+  const list = document.querySelector("#reviews-list");
+  const averageEl = document.querySelector("#reviews-average");
+  if (!list || !averageEl) return;
+  averageEl.textContent = avgRating ? `${avgRating.toFixed(1)} ★ (${count})` : "No ratings yet";
+  if (!reviews.length) {
+    list.innerHTML = '<p class="no-reviews">No reviews yet. Be the first to review!</p>';
+    return;
+  }
+  list.innerHTML = reviews.map((review) => `
+    <div class="review-item">
+      <div class="review-meta">
+        <span class="review-author">${escapeHtml(review.userName || "Customer")}</span>
+        <span class="review-date">${new Date(review.createdAt).toLocaleDateString()}</span>
+      </div>
+      <div class="review-stars">${renderStars(review.rating)}</div>
+      <p class="review-comment">${escapeHtml(review.comment || "")}</p>
+    </div>
+  `).join("");
+}
+
+let selectedRating = 0;
+
+async function submitReview(productId) {
+  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+  if (!user?.id) return showToast("Please sign in to review", false);
+  if (!selectedRating) return showToast("Please select a rating", false);
+  const comment = document.querySelector("#review-comment")?.value?.trim() || "";
+  try {
+    const response = await fetch(`${API_URL}/products/${productId}/reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: user.id, rating: selectedRating, comment })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not submit review");
+    showToast("Review submitted successfully");
+    selectedRating = 0;
+    if (document.querySelector("#review-comment")) document.querySelector("#review-comment").value = "";
+    document.querySelectorAll("#star-rating-input button").forEach((btn, idx) => {
+      btn.classList.toggle("is-active", idx < selectedRating);
+    });
+    await loadProductReviews(productId);
+    await loadProducts();
+  } catch (error) {
+    showToast(error.message, false);
+  }
+}
+
+async function submitRatingFromOrderDetails(productId, rating, comment) {
+  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+  if (!user?.id) return showToast("Please sign in to review", false);
+  try {
+    const response = await fetch(`${API_URL}/products/${productId}/reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: user.id, rating, comment })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not submit rating");
+    showToast("Rating submitted successfully");
+    const ratingForm = document.querySelector(`.order-product-rating[data-product-id="${productId}"] .rating-form`);
+    if (ratingForm) {
+      ratingForm.innerHTML = '<div class="rating-submitted">Thank you for your rating!</div>';
+    }
+    await loadProductReviews(productId);
+    await loadProducts();
+  } catch (error) {
+    showToast(error.message, false);
+  }
 }
 
 function showOrderSuccess({ orderId, items, subtotal, discount, total, delivery, couponCode, emailSent, email }) {
@@ -173,8 +348,12 @@ function setAuthenticated(user) {
     loadProducts();
     renderOrders();
     renderNotifications();
+    startServerNotificationPolling();
+    startOrderRefresh();
     return;
   }
+  stopServerNotificationPolling();
+  stopOrderRefresh();
   localStorage.removeItem(authStorageKey);
   document.body.classList.add("auth-locked");
   authModal.setAttribute("aria-hidden", "false");
@@ -198,9 +377,22 @@ function setAuthMode(mode) {
 }
 
 function openProfile() {
+  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
   profileError.textContent = "";
   profileModal.setAttribute("aria-hidden", "false");
   profileModal.classList.add("open");
+  if (user) {
+    document.querySelector("#profile-title").textContent = user.name || "Your profile";
+    document.querySelector("#profile-subtitle").textContent = user.email || "Signed in account";
+    profileLoginTab.hidden = true;
+    profileRegisterTab.hidden = true;
+    profileLoginForm.hidden = true;
+    profileRegisterForm.hidden = true;
+    return;
+  }
+  profileLoginTab.hidden = false;
+  profileRegisterTab.hidden = false;
+  profileLoginForm.hidden = false;
   setProfileAuthMode("login");
 }
 
@@ -242,9 +434,15 @@ async function submitProfileAuth(form, endpoint, payload) {
       window.location.href = "admin-login.html";
       return;
     }
-    setAuthenticated(result.user);
-    showToast(endpoint.includes("register") ? "Account created successfully" : "Welcome back");
-    closeProfile();
+    if (endpoint.includes("register")) {
+      form.reset();
+      setProfileAuthMode("login");
+      showToast("Account created. Please sign in.");
+    } else {
+      setAuthenticated(result.user);
+      showToast("Welcome back");
+      closeProfile();
+    }
   } catch (error) {
     profileError.textContent = error.message;
     showToast(error.message, false);
@@ -257,6 +455,7 @@ async function submitAuth(form, endpoint, payload) {
   const button = form.querySelector("button[type=submit]");
   button.disabled = true;
   authError.textContent = "";
+  authError.style.color = "#c15e52";
   try {
     const response = await fetch(`${API_URL}${endpoint}`, {
       method: "POST",
@@ -273,8 +472,14 @@ async function submitAuth(form, endpoint, payload) {
       window.location.href = "admin-login.html";
       return;
     }
-    setAuthenticated(result.user);
-    showToast(endpoint.includes("register") ? "Account created successfully" : "Welcome back");
+    if (endpoint.includes("register")) {
+      form.reset();
+      setAuthMode("login");
+      showToast("Account created. Please sign in.");
+    } else {
+      setAuthenticated(result.user);
+      showToast("Welcome back");
+    }
   } catch (error) {
     authError.textContent = error.message;
     showToast(error.message, false);
@@ -394,7 +599,7 @@ function renderCategoryFilter() {
   categoryFilter.innerHTML = buttons.map((button) => `<button class="category-button ${selectedCategory === button.value ? "is-active" : ""}" type="button" data-category="${button.value}">${button.label}</button>`).join("");
 }
 
-function openDetails(id) {
+async function openDetails(id) {
   const product = productById(id);
   if (!product) return;
   detailsModal.dataset.productId = id;
@@ -412,8 +617,10 @@ function openDetails(id) {
   document.querySelector("#details-name").textContent = product.name;
   document.querySelector("#details-price").innerHTML = discountFor(product) ? `${formatPrice(finalPrice(product))} <del>${formatPrice(product.price)}</del>` : formatPrice(product.price);
   document.querySelector("#details-description").textContent = product.description || `Fresh ${product.name}, carefully selected and delivered in its best condition.`;
-  document.querySelector("#details-unit").textContent = discountFor(product) ? `${discountFor(product)}% off · 1 pack` : "1 pack";
+  document.querySelector("#details-unit").textContent = discountFor(product) ? `${discountFor(product)}% off · ${productUnit(product)}` : productUnit(product);
   document.querySelector("#details-quantity").textContent = "1";
+  const productId = Number(detailsModal.dataset.productId);
+  await loadProductReviews(productId);
   detailsModal.classList.add("open");
   detailsModal.setAttribute("aria-hidden", "false");
 }
@@ -424,14 +631,44 @@ function closeModal(modal) {
 }
 
 function statusLabel(status) {
-  const map = { placed: "Placed", processing: "Processing", shipped: "Shipped", delivered: "Delivered", cancelled: "Cancelled", returned: "Returned" };
-  return map[status] || "Placed";
+  const normalizedStatus = String(status || "placed").toLowerCase();
+  const map = { placed: "Order", packed: "Packed", processing: "Processing", shipped: "Shipped", out_for_delivery: "Out for Delivery", delivered: "Delivered", cancelled: "Cancelled", returned: "Returned", "return requested": "Return Requested" };
+  return map[normalizedStatus] || "Order";
+}
+
+function normalizeOrderStatus(status) {
+  return String(status || "placed").trim().toLowerCase();
+}
+
+function renderOrderTracking(status) {
+  const normalizedStatus = String(status || "placed").toLowerCase();
+  const tracking = document.querySelector("#order-tracking");
+  if (!tracking) return;
+  if (["cancelled", "returned", "return requested"].includes(normalizedStatus)) {
+    tracking.innerHTML = `<span class="tracking-terminal is-${normalizedStatus.replace(/\s+/g, "-")}">${statusLabel(normalizedStatus)}</span>`;
+    return;
+  }
+  const steps = [
+    { value: "placed", label: "Order" },
+    { value: "packed", label: "Packed" },
+    { value: "shipped", label: "Shipped" },
+    { value: "out_for_delivery", label: "Out for Delivery" },
+    { value: "delivered", label: "Delivered" }
+  ];
+  const currentIndex = Math.max(0, steps.findIndex((step) => step.value === normalizedStatus));
+  if (normalizedStatus === "processing") steps[0].label = "Processing";
+  tracking.innerHTML = steps.map((step, index) => `
+    <span class="tracking-step ${index < currentIndex ? "is-complete" : ""} ${index === currentIndex ? "is-current" : ""}">
+      ${step.label}
+    </span>
+  `).join("");
 }
 
 function paintOrders(orders) {
   const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
   ordersList.innerHTML = orders.length ? orders.map((order) => {
-    const status = order.status || "placed";
+    const status = normalizeOrderStatus(order.status);
+    const productIds = Array.isArray(order.productIds) ? order.productIds : (order.lineItems || []).map((item) => Number(item.id)).filter(Boolean);
     const isFinal = ["cancelled", "returned", "delivered"].includes(status);
     const isReturned = status === "returned";
     const isCancelled = status === "cancelled";
@@ -444,12 +681,37 @@ function paintOrders(orders) {
       : isCancelled
         ? `<span class="order-action-note" data-action="cancelled">Cancelled by store</span>`
         : isDelivered
-          ? `<span class="order-action-note" data-action="delivered">Delivered</span>`
+          ? `<span class="order-action-note" data-action="delivered">Delivered</span><button class="rate-product" type="button" data-rate-order="${order.id}">Rate Product</button>`
           : "";
     const addressState = (order.address || "").split(",").map((s) => s.trim()).pop() || "";
     const deliveryDays = getEstimatedDeliveryDaysForState(addressState);
     return `<div class="order-row" data-view-order="${order.id}"><div><strong>Order ${order.id}</strong><small>${order.items} item${order.items === 1 ? "" : "s"} · ${order.address} · ${deliveryDays} days</small></div><div class="order-actions"><span class="order-status" data-status="${status}">${statusLabel(status)}</span>${editButton}${returnButton}${cancelButton}${statusAction}</div></div>`;
   }).join("") : '<p class="empty-orders">Your placed orders will appear here.</p>';
+}
+
+function getOrderProductIds(order) {
+  if (Array.isArray(order?.productIds)) {
+    return order.productIds.map(Number).filter((id) => Number.isInteger(id) && id > 0);
+  }
+  if (typeof order?.productIds === "string") {
+    try {
+      const ids = JSON.parse(order.productIds);
+      if (Array.isArray(ids)) return ids.map(Number).filter((id) => Number.isInteger(id) && id > 0);
+    } catch {
+      // Fall back to line items below.
+    }
+  }
+  return Array.isArray(order?.lineItems)
+    ? order.lineItems.map((item) => Number(item.id)).filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+}
+function getProductNameFromOrder(order, productId) {
+  if (Array.isArray(order?.lineItems)) {
+    const item = order.lineItems.find((li) => Number(li.id) === Number(productId));
+    if (item?.name) return item.name;
+  }
+  const product = productById(productId);
+  return product?.name || "Product";
 }
 
 async function renderOrders() {
@@ -469,14 +731,16 @@ async function renderOrders() {
             couponCode: serverOrder.couponCode || local?.couponCode,
             couponDiscount: serverOrder.couponDiscount || local?.couponDiscount,
             discount: serverOrder.discount || local?.discount,
-            lineItems: local?.lineItems,
+            lineItems: local?.lineItems ?? serverOrder.lineItems,
+            productIds: serverOrder.productIds?.length ? serverOrder.productIds : (local?.productIds || []),
             orderTotal: serverOrder.totalAmount
           };
         });
-        const localOnly = localOrders.filter((o) => !serverOrders.some((s) => s.id === o.id) && !o.userId);
+        const localOnly = localOrders.filter((o) => !serverOrders.some((s) => s.id === o.id) && (!o.userId || o.userId === user.id));
         const all = [...merged, ...localOnly];
         localStorage.setItem(ordersStorageKey, JSON.stringify(all.map((o) => ({ ...o, status: o.status || "placed" }))));
         paintOrders(all);
+        refreshOpenOrderDetails(all);
         return;
       }
     } catch (error) {
@@ -484,6 +748,50 @@ async function renderOrders() {
     }
   }
   paintOrders(localOrders);
+  refreshOpenOrderDetails(localOrders);
+}
+
+function refreshOpenOrderDetails(orders) {
+  if (!orderDetailsModal.classList.contains("open")) return;
+  const order = orders.find((item) => String(item.id) === String(orderDetailsModal.dataset.orderId));
+  if (!order) return;
+  const status = normalizeOrderStatus(order.status);
+  document.querySelector("#order-details-status").textContent = statusLabel(status);
+  renderOrderTracking(status);
+  if (status === "delivered") {
+    const rateActions = document.querySelector("#order-rate-actions");
+    const orderProductIds = getOrderProductIds(order);
+    const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+    if (rateActions) {
+      if (orderProductIds.length) {
+        rateActions.innerHTML = orderProductIds.map((productId) => {
+          const productName = getProductNameFromOrder(order, productId);
+          return `
+            <div class="order-product-rating" data-product-id="${productId}">
+              <h4>${escapeHtml(productName)}</h4>
+              <div class="rating-form" data-product-id="${productId}">
+                <div class="star-rating-input" data-product-id="${productId}">
+                  <button type="button" data-rating="1" aria-label="1 star">★</button>
+                  <button type="button" data-rating="2" aria-label="2 stars">★</button>
+                  <button type="button" data-rating="3" aria-label="3 stars">★</button>
+                  <button type="button" data-rating="4" aria-label="4 stars">★</button>
+                  <button type="button" data-rating="5" aria-label="5 stars">★</button>
+                </div>
+                <textarea rows="2" placeholder="Share your experience with this product..." data-review-comment="${productId}"></textarea>
+                <button class="primary-button submit-rating" type="button" data-submit-rating="${productId}" ${user?.id ? "" : "disabled"}>Submit Rating</button>
+                ${!user?.id ? '<small class="rating-login-hint">Sign in to submit a rating</small>' : ""}
+              </div>
+            </div>
+          `;
+        }).join("");
+      } else {
+        rateActions.innerHTML = '<p class="empty-orders" style="text-align:center;padding:16px;color:#999;">No products to rate in this order.</p>';
+      }
+    }
+  } else {
+    const rateActions = document.querySelector("#order-rate-actions");
+    if (rateActions) rateActions.innerHTML = "";
+  }
 }
 
 async function openCheckout() {
@@ -511,7 +819,10 @@ async function openCheckout() {
         if (district) document.querySelector("#customer-district").value = district;
         if (state) document.querySelector("#customer-state").value = state;
         if (country) document.querySelector("#customer-country").value = country;
-        if (pin) document.querySelector("#customer-pin").value = pin;
+        if (pin) {
+          document.querySelector("#customer-pin").value = pin;
+          if (/^\d{6}$/.test(pin)) await lookupPincode(pin);
+        }
         if (phone && !nameInput.value) nameInput.value = String(result.user?.name || "").trim();
         if (phone) phoneInput.value = phone;
       }
@@ -678,6 +989,14 @@ async function loadProducts() {
 
 let festivalOffers = [];
 let activeOffer = null;
+let couponRefreshTimer = null;
+
+function startCouponRefresh() {
+  if (couponRefreshTimer) clearInterval(couponRefreshTimer);
+  couponRefreshTimer = setInterval(() => {
+    loadAvailableCoupons();
+  }, 15000);
+}
 
 async function loadOffers() {
   try {
@@ -689,6 +1008,7 @@ async function loadOffers() {
   }
   renderOfferBanner();
   loadAvailableCoupons();
+  startCouponRefresh();
   syncActiveOffer();
   renderCart();
 }
@@ -818,7 +1138,7 @@ async function openOrderDetails(orderId) {
       const serverOrders = await response.json().catch(() => []);
       if (response.ok && Array.isArray(serverOrders)) {
         const serverOrder = serverOrders.find((o) => o.id === orderId);
-        if (serverOrder) order = { ...order, ...serverOrder, orderTotal: serverOrder.totalAmount };
+        if (serverOrder) order = { ...order, ...serverOrder, productIds: serverOrder.productIds?.length ? serverOrder.productIds : (order?.productIds || []), orderTotal: serverOrder.totalAmount };
       }
     } catch (error) {
       console.error("Could not refresh order:", error.message);
@@ -829,7 +1149,38 @@ async function openOrderDetails(orderId) {
   const delivery = Number(order.deliveryCharge || 0);
   const discount = Number(order.discount || order.couponDiscount || 0);
   document.querySelector("#order-details-id").textContent = order.id;
-  document.querySelector("#order-details-status").textContent = statusLabel(order.status || "placed");
+  const orderStatus = normalizeOrderStatus(order.status);
+  document.querySelector("#order-details-status").textContent = statusLabel(orderStatus);
+  renderOrderTracking(orderStatus);
+  const rateActions = document.querySelector("#order-rate-actions");
+    const orderProductIds = getOrderProductIds(order);
+  if (rateActions) {
+    if (orderStatus === "delivered") {
+      const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+      rateActions.innerHTML = orderProductIds.map((productId) => {
+        const productName = getProductNameFromOrder(order, productId);
+        return `
+          <div class="order-product-rating" data-product-id="${productId}">
+            <h4>${escapeHtml(productName)}</h4>
+            <div class="rating-form" data-product-id="${productId}">
+              <div class="star-rating-input" data-product-id="${productId}">
+                <button type="button" data-rating="1" aria-label="1 star">★</button>
+                <button type="button" data-rating="2" aria-label="2 stars">★</button>
+                <button type="button" data-rating="3" aria-label="3 stars">★</button>
+                <button type="button" data-rating="4" aria-label="4 stars">★</button>
+                <button type="button" data-rating="5" aria-label="5 stars">★</button>
+              </div>
+              <textarea rows="2" placeholder="Share your experience with this product..." data-review-comment="${productId}"></textarea>
+              <button class="primary-button submit-rating" type="button" data-submit-rating="${productId}" ${user?.id ? "" : "disabled"}>Submit Rating</button>
+              ${!user?.id ? '<small class="rating-login-hint">Sign in to submit a rating</small>' : ""}
+            </div>
+          </div>
+        `;
+      }).join("");
+    } else {
+      rateActions.innerHTML = "";
+    }
+  }
   document.querySelector("#order-details-items").textContent = `${order.items} item${order.items === 1 ? "" : "s"}`;
   const couponEl = document.querySelector("#order-details-coupon");
   const discountEl = document.querySelector("#order-details-discount");
@@ -877,11 +1228,12 @@ ordersList.addEventListener("click", async (event) => {
     const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
     if (user?.id) {
       try {
-        await fetch(`${API_URL}/orders/${encodeURIComponent(orderId)}`, {
+        const response = await fetch(`${API_URL}/orders/${encodeURIComponent(orderId)}`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ userId: user.id }),
         });
+        if (response.ok) await loadServerNotifications();
       } catch (error) {
         console.error("Cancel order on server failed:", error.message);
       }
@@ -911,9 +1263,45 @@ ordersList.addEventListener("click", async (event) => {
     orderEditModal.setAttribute("aria-hidden", "false");
     return;
   }
+  const rateOrder = event.target.closest("[data-rate-order]");
+  if (rateOrder) {
+    openOrderDetails(rateOrder.dataset.rateOrder);
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        const rateActions = document.querySelector("#order-rate-actions");
+        if (rateActions) {
+          rateActions.scrollIntoView({ behavior: "smooth", block: "start" });
+          const card = document.querySelector(".checkout-modal.open .checkout-card");
+          if (card) card.scrollTop = rateActions.offsetTop - 20;
+        }
+      }, 100);
+    });
+    return;
+  }
   const viewOrder = event.target.closest("[data-view-order]");
   if (viewOrder) openOrderDetails(viewOrder.dataset.viewOrder);
 });
+orderDetailsModal.addEventListener("click", (event) => {
+    const starButton = event.target.closest(".star-rating-input button[data-rating]");
+    if (starButton) {
+      const productId = Number(starButton.closest(".star-rating-input").dataset.productId);
+      const rating = Number(starButton.dataset.rating);
+      document.querySelectorAll(`.star-rating-input[data-product-id="${productId}"] button`).forEach((btn, idx) => {
+        btn.classList.toggle("is-active", idx < rating);
+      });
+      return;
+    }
+    const submitButton = event.target.closest(".submit-rating");
+    if (submitButton) {
+      const productId = Number(submitButton.dataset.submitRating);
+      const rating = document.querySelector(`.star-rating-input[data-product-id="${productId}"] button.is-active`);
+      const ratingValue = rating ? Number(rating.dataset.rating) : 0;
+      const comment = document.querySelector(`textarea[data-review-comment="${productId}"]`)?.value?.trim() || "";
+      if (!ratingValue) return showToast("Please select a rating", false);
+      submitRatingFromOrderDetails(productId, ratingValue, comment);
+      return;
+    }
+  });
 orderDetailsModal.querySelectorAll("[data-close-order-details]").forEach((element) => element.addEventListener("click", () => closeModal(orderDetailsModal)));
 document.querySelector("#request-return").addEventListener("click", async () => {
   const orderId = orderDetailsModal.dataset.orderId;
@@ -924,18 +1312,20 @@ document.querySelector("#request-return").addEventListener("click", async () => 
     order.status = "Return requested";
     localStorage.setItem(ordersStorageKey, JSON.stringify(orders));
   }
-  document.querySelector("#order-details-status").textContent = "Return requested";
+  document.querySelector("#order-details-status").textContent = statusLabel("return requested");
+  renderOrderTracking("return requested");
   renderOrders();
   closeModal(orderDetailsModal);
   showToast("Return request submitted");
   const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
   if (user?.id) {
     try {
-      await fetch(`${API_URL}/orders/${encodeURIComponent(orderId)}`, {
+      const response = await fetch(`${API_URL}/orders/${encodeURIComponent(orderId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user.id, address: order?.address || "", returnRequested: true }),
       });
+      if (response.ok) await loadServerNotifications();
     } catch (error) {
       console.error("Return request failed:", error.message);
     }
@@ -1103,8 +1493,15 @@ async function loadAvailableCoupons() {
       .filter((o) => o.coupon_code)
       .map((o) => ({ code: o.coupon_code, discount_percent: Number(o.discount_percent), min_order_amount: Number(o.min_order_amount || 0), fromOffer: true }));
     const subtotal = cart.reduce((sum, item) => sum + finalPrice(productById(item.id)) * item.quantity, 0);
-    const validCoupons = [...coupons, ...offerCodes].filter((c) => subtotal >= Number(c.min_order_amount || 0));
-    const html = validCoupons.length ? validCoupons.map((c) => `<button class="coupon-chip" type="button" data-coupon-chip="${escapeHtml(c.code)}">${escapeHtml(c.code)} · ${Number(c.discount_percent)}% off</button>`).join("") : '<span class="no-coupons">No coupons available for your cart total</span>';
+    const availableCoupons = [...coupons, ...offerCodes];
+    const html = availableCoupons.length
+      ? availableCoupons.map((c) => {
+          const minimum = Number(c.min_order_amount || 0);
+          const eligible = subtotal >= minimum;
+          const minimumLabel = minimum > 0 ? ` · Min order ${formatPrice(minimum)}` : "";
+          return `<button class="coupon-chip${eligible ? "" : " is-ineligible"}" type="button" data-coupon-chip="${escapeHtml(c.code)}" ${eligible ? "" : `title="Add ${formatPrice(minimum - subtotal)} more to use this coupon"`}>${escapeHtml(c.code)} · ${Number(c.discount_percent)}% off${minimumLabel}</button>`;
+        }).join("")
+      : '<span class="no-coupons">No active coupons available</span>';
     containers.forEach((container) => { if (container) container.innerHTML = html; });
   } catch (error) {
     containers.forEach((container) => { if (container) container.innerHTML = ""; });
@@ -1125,13 +1522,28 @@ document.addEventListener("click", (event) => {
   const chip = event.target.closest("[data-coupon-chip]");
   if (!chip) return;
   const code = chip.dataset.couponChip || "";
-  const bagInput = document.querySelector("#bag-coupon-code");
-  const checkoutInput = document.querySelector("#coupon-code");
-  if (bagInput) bagInput.value = code;
-  if (checkoutInput) checkoutInput.value = code;
-  applyCoupon(bagInput || checkoutInput, document.querySelector("#bag-coupon-status") || document.querySelector("#coupon-status"));
+  const isCheckoutCoupon = Boolean(chip.closest("#available-coupons"));
+  const input = document.querySelector(isCheckoutCoupon ? "#coupon-code" : "#bag-coupon-code");
+  const status = document.querySelector(isCheckoutCoupon ? "#coupon-status" : "#bag-coupon-status");
+  const otherInput = document.querySelector(isCheckoutCoupon ? "#bag-coupon-code" : "#coupon-code");
+  if (input) input.value = code;
+  if (otherInput) otherInput.value = code;
+  if (input && status) applyCoupon(input, status);
 });
 detailsModal.querySelectorAll("[data-close-details]").forEach((element) => element.addEventListener("click", () => closeModal(detailsModal)));
+document.querySelector("#star-rating-input")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-rating]");
+  if (!button) return;
+  selectedRating = Number(button.dataset.rating);
+  document.querySelectorAll("#star-rating-input button").forEach((btn, idx) => {
+    btn.classList.toggle("is-active", idx < selectedRating);
+  });
+});
+document.querySelector("#submit-review")?.addEventListener("click", async () => {
+  const productId = Number(detailsModal.dataset.productId);
+  if (!productId) return;
+  await submitReview(productId);
+});
 checkoutModal.querySelectorAll("[data-close-checkout]").forEach((element) => element.addEventListener("click", () => closeModal(checkoutModal)));
 orderEditModal.querySelectorAll("[data-close-order-edit]").forEach((element) => element.addEventListener("click", () => closeModal(orderEditModal)));
 profileModal.querySelectorAll("[data-close-profile]").forEach((element) => element.addEventListener("click", () => closeProfile()));
@@ -1178,8 +1590,16 @@ document.querySelector("#details-buy").addEventListener("click", () => {
 });
 document.querySelector("#checkout-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (checkoutSubmitting) return;
   const form = event.currentTarget;
   if (!form.checkValidity()) return form.reportValidity();
+  checkoutSubmitting = true;
+  const submitButton = form.querySelector("button[type=submit]");
+  const originalButtonText = submitButton?.innerHTML || "";
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.innerHTML = "Placing order...";
+  }
   const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
   const items = cart.reduce((sum, item) => sum + item.quantity, 0);
   const address = `${document.querySelector("#customer-address").value}, ${document.querySelector("#customer-city").value}, ${document.querySelector("#customer-district").value}, ${document.querySelector("#customer-state").value}, ${document.querySelector("#customer-pin").value}, ${document.querySelector("#customer-country").value}`;
@@ -1195,23 +1615,25 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
   const orderDiscount = offerDiscount + couponDiscount;
   const orderTotal = orderSubtotal - orderDiscount;
   const orderGrandTotal = orderTotal + deliveryCharge;
-  const activeCouponCode = activeOffer?.coupon_code || (couponApplied && appliedCoupon ? appliedCoupon.code : "");
+  const activeCouponCode = couponApplied && appliedCoupon ? appliedCoupon.code : "";
   let serverOrderId = null;
   let emailSent = false;
+  let emailQueued = false;
   let confirmationEmail = null;
   if (user) {
     try {
       const response = await fetch(`${API_URL}/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.id, items, address, couponCode: activeCouponCode, deliveryCharge, subtotal: orderSubtotal, discount: orderDiscount, totalAmount: orderTotal }),
+        body: JSON.stringify({ userId: user.id, items, productIds: cart.map((item) => item.id), lineItems: cart.map((item) => { const p = productById(item.id); return { id: item.id, name: p?.name || "Product", price: p?.price || 0, quantity: item.quantity, image: p?.image || "", discount: p?.discount || 0 }; }), address, state: document.querySelector("#customer-state").value.trim(), pincode: document.querySelector("#customer-pin").value.trim(), couponCode: activeCouponCode, deliveryCharge, subtotal: orderSubtotal, discount: orderDiscount, totalAmount: orderGrandTotal }),
       });
       const data = await response.json().catch(() => ({ error: "Invalid response" }));
       if (response.ok) {
         serverOrderId = data.id;
         emailSent = !!data.emailSent;
+        emailQueued = !!data.emailQueued;
         confirmationEmail = data.email || (user && user.email) || null;
-        await fetch(`${API_URL}/auth/me`, {
+        fetch(`${API_URL}/auth/me`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1227,15 +1649,27 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
           }),
         }).catch(() => {});
       } else {
-        showToast(data.error || "Could not place order", false);
+        showToast(data.detail || data.error || "Could not place order", false);
+        checkoutSubmitting = false;
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.innerHTML = originalButtonText;
+        }
+        return;
       }
     } catch (error) {
       showToast("Could not connect to server", false);
+      checkoutSubmitting = false;
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.innerHTML = originalButtonText;
+      }
+      return;
     }
   }
   const localOrders = JSON.parse(localStorage.getItem(ordersStorageKey) || "[]");
   const finalOrderId = serverOrderId || `SR${Date.now().toString().slice(-6)}`;
-  localOrders.unshift({ id: finalOrderId, items, address, userId: user?.id || null, deliveryCharge, orderTotal, couponCode: activeCouponCode, couponDiscount: orderDiscount });
+  localOrders.unshift({ id: finalOrderId, items, productIds: cart.map((item) => item.id), lineItems: cart.map((item) => { const p = productById(item.id); return { id: item.id, name: p?.name || "Product", price: p?.price || 0, quantity: item.quantity, image: p?.image || "", discount: p?.discount || 0 }; }), address, userId: user?.id || null, deliveryCharge, orderTotal, couponCode: activeCouponCode, couponDiscount: orderDiscount });
   localStorage.setItem(ordersStorageKey, JSON.stringify(localOrders));
   cart = [];
   clearCoupon();
@@ -1247,6 +1681,11 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
   form.reset();
   closeModal(checkoutModal);
   setCartOpen(false);
+  checkoutSubmitting = false;
+  if (submitButton) {
+    submitButton.disabled = false;
+    submitButton.innerHTML = originalButtonText;
+  }
   if (!user) {
     emailSent = false;
     confirmationEmail = null;
@@ -1265,6 +1704,8 @@ document.querySelector("#checkout-form").addEventListener("submit", async (event
   addNotification(`Order ${finalOrderId} placed successfully · ${items} item${items === 1 ? "" : "s"} · ${formatPrice(orderGrandTotal)}`);
   if (emailSent && confirmationEmail) {
     showToast(`Confirmation email sent to ${confirmationEmail}`);
+  } else if (emailQueued && confirmationEmail) {
+    showToast(`Order placed. Confirmation email is being sent to ${confirmationEmail}`);
   } else {
     showToast("Your order has been placed");
   }
@@ -1303,103 +1744,134 @@ document.querySelector("#order-edit-form").addEventListener("submit", async (eve
 document.querySelector("#login-tab").addEventListener("click", () => setAuthMode("login"));
 document.querySelector("#register-tab").addEventListener("click", () => setAuthMode("register"));
 
+let pincodeLookupSequence = 0;
+
+async function fetchJsonWithTimeout(url, timeoutMs = 4500) {
+  const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  const data = await response.json().catch(() => ({}));
+  return { response, data };
+}
+
 async function lookupPincode(pincode) {
   const statusEl = document.querySelector("#pincode-status");
   const districtEl = document.querySelector("#customer-district");
   const stateEl = document.querySelector("#customer-state");
   const cityEl = document.querySelector("#customer-city");
   const countryEl = document.querySelector("#customer-country");
+  const infoEl = document.querySelector("#delivery-charge-info");
+  const popup = document.querySelector("#pincode-popup");
 
+  pincode = String(pincode || "").replace(/\D/g, "").slice(0, 6);
   if (!/^\d{6}$/.test(pincode)) {
     statusEl.textContent = "";
+    statusEl.className = "pincode-status";
     return;
   }
 
+  const lookupId = ++pincodeLookupSequence;
   statusEl.textContent = "Looking up pincode...";
   statusEl.className = "pincode-status is-loading";
 
+  let details = null;
   try {
-    const response = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
-    const data = await response.json();
-
-    if (data && data[0] && data[0].Status === "Success" && data[0].PostOffice && data[0].PostOffice.length > 0) {
-      const postOffice = data[0].PostOffice[0];
-      districtEl.value = postOffice.District || "";
-      stateEl.value = postOffice.State || "";
-      countryEl.value = postOffice.Country || "India";
-      if (!cityEl.value && postOffice.Name) {
-        cityEl.value = postOffice.Name;
-      }
-      const areaName = postOffice.Name || postOffice.District;
-      statusEl.textContent = `📍 ${areaName}, ${postOffice.District}, ${postOffice.State}`;
-      statusEl.className = "pincode-status is-valid";
-      const popup = document.querySelector("#pincode-popup");
-      const areaEl = document.querySelector("#pincode-area");
-      const districtEl2 = document.querySelector("#pincode-district");
-      if (popup && areaEl && districtEl2) {
-        areaEl.textContent = `${postOffice.Name}${postOffice.Block ? `, ${postOffice.Block}` : ""}`;
-        districtEl2.textContent = `${postOffice.District}, ${postOffice.State}`;
-        popup.classList.add("show");
-        popup.setAttribute("aria-hidden", "false");
-      }
-      const state = postOffice.State || "";
-      selectedState = state;
-      const infoEl = document.querySelector("#delivery-charge-info");
-      if (state && infoEl) {
-        infoEl.textContent = "Checking delivery charges...";
-        infoEl.className = "delivery-charge-info is-loading";
-        try {
-          const chargeResponse = await fetch(`${API_URL}/delivery-charge/${encodeURIComponent(state)}`);
-          const chargeData = await chargeResponse.json().catch(() => ({}));
-          if (chargeResponse.ok && typeof chargeData.delivery_charge === "number") {
-            deliveryCharge = Number(chargeData.delivery_charge);
-            infoEl.textContent = chargeData.description ? `Delivery: ${formatPrice(deliveryCharge)} (${chargeData.description})` : `Delivery charge: ${formatPrice(deliveryCharge)}`;
-            infoEl.className = "delivery-charge-info is-valid";
-          } else {
-            deliveryCharge = 40;
-            infoEl.textContent = `Delivery charge: ${formatPrice(deliveryCharge)}`;
-            infoEl.className = "delivery-charge-info is-valid";
-          }
-        } catch (error) {
-          deliveryCharge = 40;
-          infoEl.textContent = `Delivery charge: ${formatPrice(deliveryCharge)}`;
-          infoEl.className = "delivery-charge-info is-valid";
-        }
-        renderCart();
-      } else if (infoEl) {
-        deliveryCharge = 40;
-        infoEl.textContent = `Delivery charge: ${formatPrice(deliveryCharge)}`;
-        infoEl.className = "delivery-charge-info is-valid";
-        renderCart();
-      }
-    } else {
-      statusEl.textContent = "Pincode not found. Please check and enter manually.";
-      statusEl.className = "pincode-status is-invalid";
-      deliveryCharge = 0;
-      selectedState = "";
-      const infoEl = document.querySelector("#delivery-charge-info");
-      if (infoEl) {
-        infoEl.textContent = "";
-        infoEl.className = "delivery-charge-info";
-      }
-      renderCart();
+    const { response, data } = await fetchJsonWithTimeout(`https://api.postalpincode.in/pincode/${encodeURIComponent(pincode)}`);
+    const result = data?.[0];
+    if (response.ok && result?.Status === "Success" && Array.isArray(result.PostOffice) && result.PostOffice.length) {
+      const postOffice = result.PostOffice.find((office) => office?.DeliveryStatus === "Delivery") || result.PostOffice[0];
+      details = {
+        pincode,
+        area: postOffice.Name || "",
+        district: postOffice.District || "",
+        state: postOffice.State || "",
+        country: postOffice.Country || "India",
+        block: postOffice.Block || ""
+      };
     }
   } catch (error) {
-    statusEl.textContent = "Could not verify pincode. Please enter details manually.";
+    console.error("Direct pincode lookup failed:", error.message);
+  }
+
+  if (!details) {
+    try {
+      const { response, data } = await fetchJsonWithTimeout(`${API_URL}/pincode/${encodeURIComponent(pincode)}`);
+      if (response.ok && data?.area && data?.state) {
+        details = data;
+      }
+    } catch (error) {
+      console.error("Pincode proxy lookup failed:", error.message);
+    }
+  }
+
+  if (lookupId !== pincodeLookupSequence) return;
+
+  if (!details) {
+    statusEl.textContent = "Pincode lookup is temporarily unavailable. You can enter the location manually.";
     statusEl.className = "pincode-status is-invalid";
+    selectedState = stateEl.value.trim();
     deliveryCharge = 0;
-    selectedState = "";
-    const infoEl = document.querySelector("#delivery-charge-info");
     if (infoEl) {
       infoEl.textContent = "";
       infoEl.className = "delivery-charge-info";
     }
+    if (popup) {
+      popup.classList.remove("show");
+      popup.setAttribute("aria-hidden", "true");
+    }
     renderCart();
+    return;
   }
+
+  districtEl.value = details.district || "";
+  stateEl.value = details.state || "";
+  countryEl.value = details.country || "India";
+  if (details.area || details.district) {
+    cityEl.value = details.area || details.district;
+  }
+  const areaName = details.area || details.district;
+  statusEl.textContent = `Verified: ${areaName}, ${details.district}, ${details.state}`;
+  statusEl.className = "pincode-status is-valid";
+  selectedState = details.state || "";
+
+  if (popup) {
+    const areaEl = document.querySelector("#pincode-area");
+    const districtEl2 = document.querySelector("#pincode-district");
+    if (areaEl && districtEl2) {
+      areaEl.textContent = `${details.area}${details.block ? `, ${details.block}` : ""}`;
+      districtEl2.textContent = `${details.district}, ${details.state}`;
+    }
+    popup.classList.add("show");
+    popup.setAttribute("aria-hidden", "false");
+  }
+
+  if (infoEl) {
+    infoEl.textContent = "Checking delivery charges...";
+    infoEl.className = "delivery-charge-info is-loading";
+  }
+
+  try {
+    const chargeResponse = await fetch(`${API_URL}/delivery-charge/${encodeURIComponent(selectedState)}`);
+    const chargeData = await chargeResponse.json().catch(() => ({}));
+    if (chargeResponse.ok && typeof chargeData.delivery_charge === "number") {
+      deliveryCharge = Number(chargeData.delivery_charge);
+      infoEl.textContent = chargeData.description ? `Delivery: ${formatPrice(deliveryCharge)} (${chargeData.description})` : `Delivery charge: ${formatPrice(deliveryCharge)}`;
+      infoEl.className = "delivery-charge-info is-valid";
+    } else {
+      deliveryCharge = 40;
+      infoEl.textContent = `Delivery charge: ${formatPrice(deliveryCharge)}`;
+      infoEl.className = "delivery-charge-info is-valid";
+    }
+  } catch (error) {
+    deliveryCharge = 40;
+    infoEl.textContent = `Delivery charge: ${formatPrice(deliveryCharge)}`;
+    infoEl.className = "delivery-charge-info is-valid";
+  }
+
+  renderCart();
 }
 
 document.querySelector("#customer-pin").addEventListener("input", (event) => {
-  const pincode = event.target.value.trim();
+  const pincode = event.target.value.replace(/\D/g, "").slice(0, 6);
+  event.target.value = pincode;
   if (/^\d{6}$/.test(pincode)) {
     lookupPincode(pincode);
   } else {
@@ -1432,6 +1904,8 @@ document.querySelector("#customer-pin").addEventListener("focus", () => {
 });
 
 document.querySelector("#customer-pin").addEventListener("blur", () => {
+  const pincode = document.querySelector("#customer-pin").value.trim();
+  if (/^\d{6}$/.test(pincode)) lookupPincode(pincode);
   setTimeout(() => {
     const popup = document.querySelector("#pincode-popup");
     if (popup && document.activeElement?.id !== "customer-pin") {
@@ -1440,13 +1914,95 @@ document.querySelector("#customer-pin").addEventListener("blur", () => {
     }
   }, 200);
 });
-loginForm.addEventListener("submit", (event) => {
+
+document.querySelector("#customer-state").addEventListener("input", async (event) => {
+  const state = event.target.value.trim();
+  const infoEl = document.querySelector("#delivery-charge-info");
+  selectedState = state;
+
+  if (!state) {
+    deliveryCharge = 0;
+    if (infoEl) {
+      infoEl.textContent = "";
+      infoEl.className = "delivery-charge-info";
+    }
+    renderCart();
+    return;
+  }
+
+  if (infoEl) {
+    infoEl.textContent = "Checking delivery charges...";
+    infoEl.className = "delivery-charge-info is-loading";
+  }
+
+  try {
+    const response = await fetch(`${API_URL}/delivery-charge/${encodeURIComponent(state)}`);
+    const data = await response.json().catch(() => ({}));
+    if (response.ok && typeof data.delivery_charge === "number") {
+      deliveryCharge = Number(data.delivery_charge);
+      if (infoEl) {
+        infoEl.textContent = data.description ? `Delivery: ${formatPrice(deliveryCharge)} (${data.description})` : `Delivery charge: ${formatPrice(deliveryCharge)}`;
+        infoEl.className = "delivery-charge-info is-valid";
+      }
+    } else {
+      deliveryCharge = 40;
+      if (infoEl) {
+        infoEl.textContent = `Delivery charge: ${formatPrice(deliveryCharge)}`;
+        infoEl.className = "delivery-charge-info is-valid";
+      }
+    }
+  } catch (error) {
+    deliveryCharge = 40;
+    if (infoEl) {
+      infoEl.textContent = `Delivery charge: ${formatPrice(deliveryCharge)}`;
+      infoEl.className = "delivery-charge-info is-valid";
+    }
+  }
+
+  renderCart();
+});
+
+ loginForm.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!loginForm.checkValidity()) return loginForm.reportValidity();
   submitAuth(loginForm, "/auth/login", {
     email: document.querySelector("#login-email").value,
     password: document.querySelector("#login-password").value,
   });
+});
+document.querySelector("#forgot-password-link")?.addEventListener("click", async (event) => {
+  event.preventDefault();
+  const emailInput = document.querySelector("#login-email");
+  const email = emailInput.value.trim().toLowerCase();
+  authError.textContent = "";
+  if (!email) {
+    emailInput.focus();
+    authError.textContent = "Enter your email address first, then click Forgot Password.";
+    return;
+  }
+  if (!email || !email.includes("@")) {
+    authError.style.color = "#c15e52";
+    authError.textContent = "Enter a valid email address.";
+    return;
+  }
+  try {
+    const response = await fetch(`${API_URL}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const data = await response.json().catch(() => ({ error: "Invalid response" }));
+    if (response.ok) {
+      authError.style.color = "var(--green)";
+      authError.textContent = data.message || "If an account exists, reset instructions will be sent to your email.";
+    } else {
+      authError.style.color = "#c15e52";
+      authError.textContent = data.error || "Could not process password reset";
+    }
+  } catch (error) {
+    authError.style.color = "#c15e52";
+    authError.textContent = "Could not connect to server";
+  }
 });
 registerForm.addEventListener("submit", (event) => {
   event.preventDefault();

@@ -30,7 +30,8 @@ if (fs.existsSync(projectRootEnv)) {
 const EMAIL_HOST = process.env.EMAIL_HOST;
 const EMAIL_PORT = Number(process.env.EMAIL_PORT);
 const EMAIL_USER = process.env.EMAIL_USER;
-const EMAIL_PASS = process.env.EMAIL_PASS;
+const EMAIL_PASS = process.env.EMAIL_PASS || process.env.EMAIL_PASSWORD;
+const EMAIL_FROM = process.env.EMAIL_FROM || EMAIL_USER;
 const ORDER_NOTIFICATION_EMAIL = (process.env.ORDER_NOTIFICATION_EMAIL || process.env.EMAIL_USER || "").trim();
 
 let emailTransporter = null;
@@ -39,16 +40,69 @@ if (EMAIL_HOST && EMAIL_PORT && EMAIL_USER && EMAIL_PASS) {
         host: EMAIL_HOST,
         port: EMAIL_PORT,
         secure: Number(EMAIL_PORT) === 465,
-        auth: { user: EMAIL_USER, pass: EMAIL_PASS }
+        auth: { user: EMAIL_USER, pass: EMAIL_PASS },
+        from: EMAIL_FROM
     });
     emailTransporter.verify().then(
-        () => {
-            console.log(`Email transporter verified. Sending as: ${EMAIL_USER}. Order notifications go to: ${ORDER_NOTIFICATION_EMAIL || "(unset)"}`);
-        },
-        (err) => console.error("Email transporter verification failed:", err.message)
-    );
+    () => {
+        console.log("=================================");
+        console.log("[EMAIL] Brevo SMTP connected successfully");
+        console.log("[EMAIL] Host:", EMAIL_HOST);
+        console.log("[EMAIL] Port:", EMAIL_PORT);
+        console.log("[EMAIL] User:", EMAIL_USER);
+        console.log("[EMAIL] From:", EMAIL_FROM);
+        console.log("[EMAIL] Password configured:", !!EMAIL_PASS);
+        console.log("=================================");
+    },
+    (err) => {
+        console.error("=================================");
+        console.error("[EMAIL] Brevo SMTP connection FAILED");
+        console.error("[EMAIL] Error:", err.message);
+        console.error("=================================");
+    }
+);
 } else {
     console.warn("Email not configured. Set EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env to enable order confirmation emails.");
+}
+
+async function fetchPincodeDetails(pincode) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    try {
+        const response = await fetch(`https://api.postalpincode.in/pincode/${encodeURIComponent(pincode)}`, {
+            signal: controller.signal,
+            headers: { Accept: "application/json" }
+        });
+        if (!response.ok) {
+            throw new Error(`Pincode API returned ${response.status}`);
+        }
+        const data = await response.json();
+        const result = Array.isArray(data) ? data[0] : null;
+        if (result?.Status !== "Success" || !Array.isArray(result.PostOffice) || !result.PostOffice.length) {
+            return null;
+        }
+        const postOffice = result.PostOffice.find((office) => office?.DeliveryStatus === "Delivery") || result.PostOffice[0];
+        return {
+            pincode,
+            area: postOffice.Name || "",
+            district: postOffice.District || "",
+            state: postOffice.State || "",
+            country: postOffice.Country || "India",
+            block: postOffice.Block || ""
+        };
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+    })[character]);
 }
 
 async function sendOrderEmail({ to, name, id, items, subtotal, discount, totalAmount, deliveryCharge, address, couponCode }) {
@@ -60,17 +114,27 @@ async function sendOrderEmail({ to, name, id, items, subtotal, discount, totalAm
     const discountText = fmt(discount);
     const totalText = fmt(totalAmount);
     const deliveryText = fmt(deliveryCharge);
-    const couponRow = couponCode ? `<tr><td style="padding:10px 14px;color:#666;">Coupon</td><td style="padding:10px 14px;text-align:right;"><strong>${couponCode}</strong></td></tr>` : "";
+    const safe = {
+        name: escapeHtml(name),
+        id: escapeHtml(id),
+        items: escapeHtml(items),
+        address: escapeHtml(address),
+        couponCode: escapeHtml(couponCode)
+    };
+    const couponRow = couponCode ? `<tr><td style="padding:10px 14px;color:#666;">Coupon</td><td style="padding:10px 14px;text-align:right;"><strong>${safe.couponCode}</strong></td></tr>` : "";
     const discountRow = Number(discount) > 0 ? `<tr><td style="padding:10px 14px;color:#666;">Discount</td><td style="padding:10px 14px;text-align:right;color:#2c5f2d;">-&#8377;${Number(discount).toLocaleString("en-IN")}</td></tr>` : "";
 
     const customerEmail = String(to || "").trim();
     const primaryRecipient = customerEmail || ORDER_NOTIFICATION_EMAIL;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(primaryRecipient)) {
+        throw new Error("A valid order confirmation recipient is required");
+    }
     const ccList = ORDER_NOTIFICATION_EMAIL && customerEmail && ORDER_NOTIFICATION_EMAIL.toLowerCase() !== customerEmail.toLowerCase()
         ? [ORDER_NOTIFICATION_EMAIL]
         : [];
 
     const mailOptions = {
-        from: `Sriram Store <${EMAIL_USER}>`,
+        from: `Sriram Store <${EMAIL_FROM}>`,
         to: primaryRecipient,
         cc: ccList,
         replyTo: ORDER_NOTIFICATION_EMAIL || customerEmail || undefined,
@@ -86,17 +150,17 @@ async function sendOrderEmail({ to, name, id, items, subtotal, discount, totalAm
                     <h1 style="margin:0;color:#fff;font-size:22px;letter-spacing:0.3px;">Order Confirmed!</h1>
                 </div>
                 <div style="background:#fff;padding:24px 22px;border:1px solid #eee;border-top:none;border-radius:0 0 8px 8px;">
-                    <p style="margin:0 0 14px;">Hello <strong>${name}</strong>,</p>
+                    <p style="margin:0 0 14px;">Hello <strong>${safe.name}</strong>,</p>
                     <p style="margin:0 0 18px;color:#444;">Thank you for your order with <strong>Sriram Store</strong>. Below is your complete payment summary.</p>
                     <table style="width:100%;border-collapse:collapse;margin:0 0 18px;background:#f7faf5;border:1px solid #e3ecdc;border-radius:8px;">
-                        <tr><td style="padding:10px 14px;color:#666;">Order ID</td><td style="padding:10px 14px;text-align:right;"><strong>${id}</strong></td></tr>
-                        <tr><td style="padding:10px 14px;color:#666;">Items</td><td style="padding:10px 14px;text-align:right;"><strong>${items}</strong></td></tr>
+                        <tr><td style="padding:10px 14px;color:#666;">Order ID</td><td style="padding:10px 14px;text-align:right;"><strong>${safe.id}</strong></td></tr>
+                        <tr><td style="padding:10px 14px;color:#666;">Items</td><td style="padding:10px 14px;text-align:right;"><strong>${safe.items}</strong></td></tr>
                         ${couponRow}
                         <tr><td style="padding:10px 14px;color:#666;">Subtotal</td><td style="padding:10px 14px;text-align:right;">&#8377;${Number(subtotal || 0).toLocaleString("en-IN")}</td></tr>
                         ${discountRow}
                         <tr><td style="padding:10px 14px;color:#666;">Delivery Charge</td><td style="padding:10px 14px;text-align:right;">&#8377;${Number(deliveryCharge).toLocaleString("en-IN")}</td></tr>
                         <tr style="background:#eaf3e3;"><td style="padding:14px;color:#2c5f2d;font-size:15px;"><strong>Total Paid</strong></td><td style="padding:14px;text-align:right;color:#2c5f2d;font-size:20px;"><strong>&#8377;${Number(totalAmount).toLocaleString("en-IN")}</strong></td></tr>
-                        <tr><td style="padding:10px 14px;color:#666;vertical-align:top;">Delivery Address</td><td style="padding:10px 14px;text-align:right;">${address}</td></tr>
+                        <tr><td style="padding:10px 14px;color:#666;vertical-align:top;">Delivery Address</td><td style="padding:10px 14px;text-align:right;">${safe.address}</td></tr>
                     </table>
                     <p style="margin:0 0 8px;">Your order has been successfully placed and will be processed shortly.</p>
                     <p style="margin:0;color:#666;font-size:13px;">Thank you for shopping with us!</p>
@@ -118,6 +182,15 @@ async function sendOrderEmail({ to, name, id, items, subtotal, discount, totalAm
 const app = express();
 const adminTokens = new Set();
 
+function parseProductIds(value) {
+    try {
+        const ids = JSON.parse(value || "[]");
+        return Array.isArray(ids) ? ids.map(Number).filter((id) => Number.isInteger(id) && id > 0) : [];
+    } catch {
+        return [];
+    }
+}
+
 const uploadDirectory = path.join(__dirname, "..", "public", "images", "uploads");
 
 fs.mkdirSync(uploadDirectory, { recursive: true });
@@ -129,6 +202,23 @@ fs.mkdirSync(uploadDirectory, { recursive: true });
 
 app.use(cors());
 app.use(express.json());
+
+app.get("/pincode/:pincode", async (req, res) => {
+    const pincode = String(req.params.pincode || "").trim();
+    if (!/^\d{6}$/.test(pincode)) {
+        return res.status(400).json({ error: "Valid 6-digit PIN code is required" });
+    }
+    try {
+        const details = await fetchPincodeDetails(pincode);
+        if (!details) {
+            return res.status(404).json({ error: "Pincode not found" });
+        }
+        res.json(details);
+    } catch (error) {
+        console.error("Pincode lookup failed:", error.message);
+        res.status(502).json({ error: "Could not verify pincode" });
+    }
+});
 
 app.use(express.static(path.join(__dirname, "..")));
 
@@ -292,7 +382,9 @@ const ordersReady = databaseReady.then(async () => {
             address TEXT NOT NULL,
             delivery_charge DECIMAL(10,2) NOT NULL DEFAULT 0,
             Total_Amount DECIMAL(10,2) NOT NULL DEFAULT 0,
-            status ENUM('placed','processing','shipped','delivered','cancelled','returned') NOT NULL DEFAULT 'placed',
+            status ENUM('placed','packed','shipped','out_for_delivery','delivered','processing','cancelled','returned') NOT NULL DEFAULT 'placed',
+            product_ids TEXT NULL,
+            line_items TEXT NULL,
             coupon_code VARCHAR(50) NULL,
             coupon_discount DECIMAL(10,2) NOT NULL DEFAULT 0,
             discount DECIMAL(10,2) NOT NULL DEFAULT 0,
@@ -311,8 +403,8 @@ const ordersReady = databaseReady.then(async () => {
     const [statusCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'status'");
     if (statusCols.length) {
         const type = statusCols[0].Type || "";
-        if (!type.includes("returned")) {
-            await dbPromise.query("ALTER TABLE orders MODIFY COLUMN status ENUM('placed','processing','shipped','delivered','cancelled','returned') NOT NULL DEFAULT 'placed'");
+        if (!type.includes("out_for_delivery") || !type.includes("packed")) {
+            await dbPromise.query("ALTER TABLE orders MODIFY COLUMN status ENUM('placed','packed','shipped','out_for_delivery','delivered','processing','cancelled','returned') NOT NULL DEFAULT 'placed'");
         }
     }
     const [couponCodeCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'coupon_code'");
@@ -326,6 +418,14 @@ const ordersReady = databaseReady.then(async () => {
     const [discountCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'discount'");
     if (!discountCols.length) {
         await dbPromise.query("ALTER TABLE orders ADD COLUMN discount DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER coupon_discount");
+    }
+    const [productIdsCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'product_ids'");
+    if (!productIdsCols.length) {
+        await dbPromise.query("ALTER TABLE orders ADD COLUMN product_ids TEXT NULL AFTER status");
+    }
+    const [lineItemsCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'line_items'");
+    if (!lineItemsCols.length) {
+        await dbPromise.query("ALTER TABLE orders ADD COLUMN line_items TEXT NULL AFTER product_ids");
     }
     console.log("✅ Orders table is ready");
 }).catch((error) => {
@@ -482,6 +582,7 @@ const supportReady = databaseReady.then(async () => {
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(150) NOT NULL,
             email VARCHAR(200) NOT NULL,
+            phone VARCHAR(20) NULL,
             order_id VARCHAR(50) NULL,
             category VARCHAR(100) NOT NULL,
             message TEXT NOT NULL,
@@ -489,6 +590,10 @@ const supportReady = databaseReady.then(async () => {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     `);
+    const [phoneCols] = await dbPromise.query("SHOW COLUMNS FROM support_tickets LIKE 'phone'");
+    if (!phoneCols.length) {
+        await dbPromise.query("ALTER TABLE support_tickets ADD COLUMN phone VARCHAR(20) NULL AFTER email");
+    }
     await dbPromise.query(`
         CREATE TABLE IF NOT EXISTS support_replies (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -505,7 +610,43 @@ const supportReady = databaseReady.then(async () => {
     throw error;
 });
 
-Promise.all([inventoryReady, profilesReady, ordersReady, deliveryChargesReady, couponsReady, festivalsReady, offersReady, supportReady])
+const notificationsReady = databaseReady.then(async () => {
+    await db.promise().query(`
+        CREATE TABLE IF NOT EXISTS user_notifications (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            message VARCHAR(500) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `);
+    console.log("✅ User notifications table is ready");
+}).catch((error) => {
+    console.error("❌ User notifications table setup failed:", error.message);
+    throw error;
+});
+
+const reviewsReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS reviews (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            product_id INT NOT NULL,
+            user_id INT NOT NULL,
+            rating DECIMAL(2,1) NOT NULL,
+            comment TEXT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `);
+    console.log("✅ Reviews table is ready");
+}).catch((error) => {
+    console.error("❌ Reviews table setup failed:", error.message);
+    throw error;
+});
+
+Promise.all([inventoryReady, profilesReady, ordersReady, deliveryChargesReady, couponsReady, festivalsReady, offersReady, supportReady, notificationsReady, reviewsReady])
     .then(() => console.log("✅ All tables are ready"))
     .catch((error) => console.error("❌ Schema setup encountered errors:", error.message));
 
@@ -537,12 +678,18 @@ app.listen(PORT, () => {
 app.get("/products", async (req, res) => {
     try {
         await inventoryReady;
+        await reviewsReady;
     } catch (error) {
         console.error("Inventory setup failed:", error.message);
         return res.status(503).json({ error: "Products are temporarily unavailable" });
     }
     db.query(
-        "SELECT id, name, price, category, image, description, stock, discount, expiry FROM products ORDER BY id",
+        `SELECT p.id, p.name, p.price, p.category, p.image, p.description, p.stock, p.discount, p.expiry,
+                COALESCE(AVG(r.rating), 0) as rating, COALESCE(COUNT(r.id), 0) as reviews
+         FROM products p
+         LEFT JOIN reviews r ON r.product_id = p.id
+         GROUP BY p.id
+         ORDER BY p.id`,
         (err, result) => {
         if (err) {
             console.error("Products query failed:", err.message);
@@ -551,6 +698,100 @@ app.get("/products", async (req, res) => {
         res.json(result);
         },
     );
+});
+
+app.get("/products/:id/reviews", async (req, res) => {
+    const productId = Number(req.params.id);
+    if (!Number.isInteger(productId) || productId < 1) return res.status(400).json({ error: "Valid product id is required" });
+    try {
+        await inventoryReady;
+        await reviewsReady;
+        const [reviews] = await db.promise().query(
+            `SELECT r.id, r.product_id, r.user_id, u.name as user_name, r.rating, r.comment, r.created_at
+             FROM reviews r
+             JOIN users u ON u.id = r.user_id
+             WHERE r.product_id = ?
+             ORDER BY r.created_at DESC`,
+            [productId]
+        );
+        res.json(reviews.map((row) => ({
+            id: row.id,
+            productId: row.product_id,
+            userId: row.user_id,
+            userName: row.user_name,
+            rating: Number(row.rating) || 0,
+            comment: row.comment || "",
+            createdAt: row.created_at
+        })));
+    } catch (error) {
+        console.error("Fetch reviews failed:", error.message);
+        res.status(503).json({ error: "Could not load reviews" });
+    }
+});
+
+app.get("/products/:id/rating", async (req, res) => {
+    const productId = Number(req.params.id);
+    if (!Number.isInteger(productId) || productId < 1) return res.status(400).json({ error: "Valid product id is required" });
+    try {
+        await inventoryReady;
+        await reviewsReady;
+        const [[stats]] = await db.promise().query(
+            "SELECT AVG(rating) as avg_rating, COUNT(*) as review_count FROM reviews WHERE product_id = ?",
+            [productId]
+        );
+        res.json({
+            productId,
+            avgRating: stats?.avg_rating ? Number(stats.avg_rating) : 0,
+            reviewCount: stats?.review_count ? Number(stats.review_count) : 0
+        });
+    } catch (error) {
+        console.error("Fetch rating failed:", error.message);
+        res.status(503).json({ error: "Could not load rating" });
+    }
+});
+
+app.post("/products/:id/reviews", async (req, res) => {
+    const productId = Number(req.params.id);
+    const body = req.body || {};
+    const userId = Number(body.userId);
+    const rating = Number(body.rating);
+    const comment = String(body.comment || "").trim();
+    if (!Number.isInteger(productId) || productId < 1) return res.status(400).json({ error: "Valid product id is required" });
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "User id is required" });
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) return res.status(400).json({ error: "Rating must be between 1 and 5" });
+    try {
+        await inventoryReady;
+        await reviewsReady;
+        const [[product]] = await db.promise().query("SELECT id FROM products WHERE id = ?", [productId]);
+        if (!product) return res.status(404).json({ error: "Product not found" });
+        await ordersReady;
+        const [deliveredOrders] = await db.promise().query(
+            "SELECT product_ids FROM orders WHERE user_id = ? AND status = 'delivered'",
+            [userId]
+        );
+        const purchasedAfterDelivery = deliveredOrders.some((order) => parseProductIds(order.product_ids).includes(productId));
+        if (!purchasedAfterDelivery) return res.status(403).json({ error: "You can review products after delivery" });
+        const [result] = await db.promise().query(
+            "INSERT INTO reviews (product_id, user_id, rating, comment) VALUES (?, ?, ?, ?)",
+            [productId, userId, rating, comment || null]
+        );
+        const [[stats]] = await db.promise().query(
+            "SELECT AVG(rating) as avg_rating, COUNT(*) as review_count FROM reviews WHERE product_id = ?",
+            [productId]
+        );
+        res.status(201).json({
+            id: result.insertId,
+            productId,
+            userId,
+            rating,
+            comment: comment || null,
+            avgRating: Number(stats.avg_rating) || 0,
+            reviewCount: Number(stats.review_count) || 0
+        });
+    } catch (error) {
+        console.error("Create review failed:", error.message);
+        res.status(503).json({ error: "Could not submit review" });
+    }
 });
 
 app.get("/health", (req, res) => {
@@ -630,6 +871,21 @@ app.post("/auth/login", async (req, res) => {
     }
 });
 
+app.post("/auth/forgot-password", async (req, res) => {
+    const body = req.body || {};
+    const email = String(body.email || "").trim().toLowerCase();
+    if (!email || !email.includes("@")) return res.status(400).json({ error: "Valid email is required" });
+    try {
+        await databaseReady;
+        await profilesReady;
+        const [[user]] = await db.promise().query("SELECT id FROM users WHERE email = ?", [email]);
+        res.json({ message: "If an account exists, a reset link would be sent to your email" });
+    } catch (error) {
+        console.error("Forgot password failed:", error.message);
+        res.status(503).json({ error: "Could not process request" });
+    }
+});
+
 app.get("/auth/me", async (req, res) => {
     const userId = Number(req.query.userId);
     if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
@@ -681,6 +937,38 @@ function requireAdmin(req, res, next) {
     next();
 }
 
+async function createUserNotification(userId, message) {
+    const id = Number(userId);
+    if (!Number.isInteger(id) || id < 1 || !message) return;
+    await notificationsReady;
+    await db.promise().query(
+        "INSERT INTO user_notifications (user_id, message) VALUES (?, ?)",
+        [id, String(message).slice(0, 500)]
+    );
+}
+
+async function createUserNotificationByEmail(email, message) {
+    await databaseReady;
+    const [[user]] = await db.promise().query("SELECT id FROM users WHERE email = ?", [String(email || "").trim().toLowerCase()]);
+    if (user) await createUserNotification(user.id, message);
+}
+
+app.get("/notifications", async (req, res) => {
+    const userId = Number(req.query.userId);
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    try {
+        await notificationsReady;
+        const [rows] = await db.promise().query(
+            "SELECT id, message, created_at FROM user_notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
+            [userId]
+        );
+        res.json(rows);
+    } catch (error) {
+        console.error("User notifications fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load notifications" });
+    }
+});
+
 app.get("/admin/customers", requireAdmin, async (req, res) => {
     try {
         await databaseReady;
@@ -703,7 +991,7 @@ app.get("/admin/orders", requireAdmin, async (req, res) => {
         await databaseReady;
         await ordersReady;
         const [orders] = await db.promise().query(`
-            SELECT o.id, o.user_id, u.name as user_name, u.email as user_email, o.items, o.address, o.delivery_charge, o.status, o.created_at
+            SELECT o.id, o.user_id, u.name as user_name, u.email as user_email, o.items, o.address, o.delivery_charge, o.status, o.created_at, o.product_ids, o.line_items
             FROM orders o
             JOIN users u ON u.id = o.user_id
             ORDER BY o.created_at DESC
@@ -718,12 +1006,15 @@ app.get("/admin/orders", requireAdmin, async (req, res) => {
 app.patch("/admin/orders/:id/status", requireAdmin, async (req, res) => {
     const id = String(req.params.id || "").trim();
     const status = String(req.body?.status || "").trim();
-    const allowed = ["placed", "processing", "shipped", "delivered", "cancelled", "returned"];
+    const allowed = ["placed", "packed", "shipped", "out_for_delivery", "delivered", "processing", "cancelled", "returned"];
     if (!id || !allowed.includes(status)) return res.status(400).json({ error: "Valid order id and status are required" });
     try {
         await ordersReady;
+        const [[order]] = await db.promise().query("SELECT user_id FROM orders WHERE id = ?", [id]);
+        if (!order) return res.status(404).json({ error: "Order not found" });
         const [result] = await db.promise().query("UPDATE orders SET status = ? WHERE id = ?", [status, id]);
         if (!result.affectedRows) return res.status(404).json({ error: "Order not found" });
+        await createUserNotification(order.user_id, `Order ${id} status updated to ${status}.`);
         res.json({ id, status });
     } catch (error) {
         console.error("Order status update failed:", error.message);
@@ -738,8 +1029,8 @@ app.get("/admin/orders/:id", requireAdmin, async (req, res) => {
         await databaseReady;
         await ordersReady;
         const [[order]] = await db.promise().query(`
-            SELECT o.id, o.user_id, u.name as user_name, u.email as user_email, u.phone as user_phone,
-                   o.items, o.address, o.delivery_charge, o.Total_Amount, o.status, o.created_at
+            SELECT o.id, o.user_id, u.name as user_name, u.email as user_email,
+                 o.items, o.address, o.delivery_charge, o.Total_Amount, o.status, o.product_ids, o.line_items, o.created_at
             FROM orders o
             JOIN users u ON u.id = o.user_id
             WHERE o.id = ?
@@ -750,12 +1041,13 @@ app.get("/admin/orders/:id", requireAdmin, async (req, res) => {
             user_id: order.user_id,
             user_name: order.user_name,
             user_email: order.user_email,
-            user_phone: order.user_phone,
             items: Number(order.items) || 0,
             address: order.address,
             delivery_charge: Number(order.delivery_charge) || 0,
             total_amount: Number(order.Total_Amount) || 0,
             status: order.status,
+            productIds: parseProductIds(order.product_ids),
+            lineItems: (() => { try { return JSON.parse(order.line_items || "[]"); } catch { return []; } })(),
             created_at: order.created_at
         });
     } catch (error) {
@@ -787,6 +1079,7 @@ app.delete("/orders/:id", async (req, res) => {
         await ordersReady;
         const [result] = await db.promise().query("DELETE FROM orders WHERE id = ? AND user_id = ?", [id, userId]);
         if (!result.affectedRows) return res.status(404).json({ error: "Order not found or not owned by this user" });
+        await createUserNotification(userId, `Order ${id} was cancelled.`);
         res.json({ id, deleted: true });
     } catch (error) {
         console.error("Order deletion failed:", error.message);
@@ -811,7 +1104,7 @@ app.get("/orders", async (req, res) => {
     try {
         await ordersReady;
         const [rows] = await db.promise().query(
-            "SELECT id, user_id, items, address, delivery_charge, Total_Amount, status, coupon_code, coupon_discount, discount, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC",
+            "SELECT id, user_id, items, address, delivery_charge, Total_Amount, status, product_ids, line_items, coupon_code, coupon_discount, discount, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC",
             [userId]
         );
         res.json(rows.map((row) => ({
@@ -825,6 +1118,8 @@ app.get("/orders", async (req, res) => {
             couponCode: row.coupon_code || null,
             couponDiscount: Number(row.coupon_discount) || 0,
             discount: Number(row.discount) || 0,
+            productIds: parseProductIds(row.product_ids),
+            lineItems: (() => { try { return JSON.parse(row.line_items || "[]"); } catch { return []; } })(),
             createdAt: row.created_at
         })));
     } catch (error) {
@@ -847,6 +1142,7 @@ app.patch("/orders/:id", async (req, res) => {
         if (order.user_id !== userId) return res.status(403).json({ error: "You can only update your own orders" });
         if (returnRequested) {
             await db.promise().query("UPDATE orders SET status = ? WHERE id = ?", ["returned", id]);
+            await createUserNotification(userId, `Return requested for order ${id}.`);
             res.json({ id, status: "returned" });
         } else {
             await db.promise().query("UPDATE orders SET address = ? WHERE id = ?", [address, id]);
@@ -905,6 +1201,7 @@ app.post("/admin/products", requireAdmin, async (req, res) => {
     const description = String(body.description || "").trim() || null;
     const stock = Number(body.stock);
     const discount = Number(body.discount || 0);
+    const productIds = Array.isArray(body.productIds) ? body.productIds.map(Number).filter((id) => Number.isInteger(id) && id > 0) : [];
     const expiry = body.expiry ? String(body.expiry).trim() : null;
     if (!name || !Number.isFinite(price) || price < 0 || !category || !Number.isInteger(stock) || stock < 0 || !Number.isFinite(discount) || discount < 0 || discount > 100) return res.status(400).json({ error: "Enter valid product, stock, and discount values" });
     try {
@@ -1222,6 +1519,7 @@ app.post("/admin/support/:id/replies", requireAdmin, async (req, res) => {
         const [tickets] = await db.promise().query("SELECT * FROM support_tickets WHERE id = ?", [id]);
         if (!tickets[0]) return res.status(404).json({ error: "Ticket not found" });
         await db.promise().query("INSERT INTO support_replies (ticket_id, message, is_customer_reply) VALUES (?, ?, ?)", [id, message, false]);
+        await createUserNotificationByEmail(tickets[0].email, `Support replied to ticket #${id}.`);
         res.status(201).json({ message: "Reply added" });
     } catch (error) {
         console.error("Admin support reply failed:", error.message);
@@ -1238,6 +1536,8 @@ app.patch("/admin/support/:id", requireAdmin, async (req, res) => {
         await supportReady;
         const [result] = await db.promise().query("UPDATE support_tickets SET status = ? WHERE id = ?", [status, id]);
         if (!result.affectedRows) return res.status(404).json({ error: "Ticket not found" });
+        const [[ticket]] = await db.promise().query("SELECT email FROM support_tickets WHERE id = ?", [id]);
+        if (ticket) await createUserNotificationByEmail(ticket.email, `Support ticket #${id} status updated to ${status}.`);
         res.json({ message: "Ticket updated" });
     } catch (error) {
         console.error("Admin support update failed:", error.message);
@@ -1419,7 +1719,7 @@ app.post("/test-email", async (req, res) => {
     if (!emailTransporter) return res.status(503).json({ error: "Email transporter not configured" });
     try {
         const info = await emailTransporter.sendMail({
-            from: `Sriram Store <${EMAIL_USER}>`,
+            from: `Sriram Store <${EMAIL_FROM}>`,
             to,
             subject: "Test Email from Sriram Store",
             text: "If you see this, your email configuration is working correctly.",
@@ -1433,7 +1733,7 @@ app.post("/test-email", async (req, res) => {
     }
 });
 
-async function sendSupportEmail({ to, name, orderId, category, message }) {
+async function sendSupportEmail({ to, name, phone, orderId, category, message }) {
     if (!emailTransporter) {
         throw new Error("Email transporter not configured. Check EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env");
     }
@@ -1443,7 +1743,7 @@ async function sendSupportEmail({ to, name, orderId, category, message }) {
         to: to || ORDER_NOTIFICATION_EMAIL,
         replyTo: to || ORDER_NOTIFICATION_EMAIL,
         subject: `Support Request: ${categoryLabel} | Sriram Store`,
-        text: `New Support Request\n\nName: ${name}\nEmail: ${to}\nOrder ID: ${orderId || "N/A"}\nCategory: ${categoryLabel}\n\nMessage:\n${message}\n\n— Sriram Store Support`,
+        text: `New Support Request\n\nName: ${name}\nEmail: ${to}\nPhone: ${phone || "N/A"}\nOrder ID: ${orderId || "N/A"}\nCategory: ${categoryLabel}\n\nMessage:\n${message}\n\n— Sriram Store Support`,
         html: `
             <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#fafafa;padding:20px;">
                 <div style="background:#2c5f2d;color:#fff;padding:18px 22px;border-radius:8px 8px 0 0;text-align:center;">
@@ -1453,6 +1753,7 @@ async function sendSupportEmail({ to, name, orderId, category, message }) {
                     <table style="width:100%;border-collapse:collapse;margin:0 0 18px;background:#f7faf5;border:1px solid #e3ecdc;border-radius:8px;">
                         <tr><td style="padding:10px 14px;color:#666;">Name</td><td style="padding:10px 14px;text-align:right;"><strong>${name}</strong></td></tr>
                         <tr><td style="padding:10px 14px;color:#666;">Email</td><td style="padding:10px 14px;text-align:right;">${to}</td></tr>
+                        <tr><td style="padding:10px 14px;color:#666;">Phone</td><td style="padding:10px 14px;text-align:right;">${phone || "N/A"}</td></tr>
                         <tr><td style="padding:10px 14px;color:#666;">Order ID</td><td style="padding:10px 14px;text-align:right;">${orderId || "N/A"}</td></tr>
                         <tr><td style="padding:10px 14px;color:#666;">Category</td><td style="padding:10px 14px;text-align:right;">${categoryLabel}</td></tr>
                         <tr><td style="padding:10px 14px;color:#666;vertical-align:top;">Message</td><td style="padding:10px 14px;text-align:right;white-space:pre-wrap;">${message}</td></tr>
@@ -1475,21 +1776,27 @@ async function sendSupportEmail({ to, name, orderId, category, message }) {
 
 app.post("/support", async (req, res) => {
     const body = req.body || {};
-    const name = String(body.name || "").trim();
-    const email = String(body.email || "").trim();
-    const orderId = String(body.orderId || "").trim() || null;
+    const userId = Number(body.userId);
+    const orderId = String(body.orderId || "").trim();
     const category = String(body.category || "").trim();
     const message = String(body.message || "").trim();
+    const name = String(body.name || "").trim();
+    const email = String(body.email || "").trim();
 
-    if (!name || !email || !category || !message) {
-        return res.status(400).json({ error: "Name, email, category, and message are required" });
+    if (!Number.isInteger(userId) || userId < 1 || !name || !email || !orderId || !category || !message) {
+        return res.status(400).json({ error: "Name, email, Order ID, category, and message are required" });
     }
 
     try {
+        await databaseReady;
+        const [users] = await db.promise().query("SELECT name, email FROM users WHERE id = ?", [userId]);
+        if (!users[0]) return res.status(404).json({ error: "User not found" });
+        const user = users[0];
+
         await supportReady;
         const [result] = await db.promise().query(
-            "INSERT INTO support_tickets (name, email, order_id, category, message) VALUES (?, ?, ?, ?, ?)",
-            [name, email, orderId, category, message]
+            "INSERT INTO support_tickets (name, email, phone, order_id, category, message) VALUES (?, ?, ?, ?, ?, ?)",
+            [name || user.name, email || user.email, null, orderId, category, message]
         );
 
         let emailSent = false;
@@ -1497,7 +1804,7 @@ app.post("/support", async (req, res) => {
         if (emailTransporter) {
             (async () => {
                 try {
-                    await sendSupportEmail({ to: email, name, orderId, category, message });
+                    await sendSupportEmail({ to: email || user.email, name: name || user.name, phone: null, orderId, category, message });
                     emailSent = true;
                 } catch (err) {
                     emailSent = false;
@@ -1511,8 +1818,9 @@ app.post("/support", async (req, res) => {
 
         res.status(201).json({
             id: result.insertId,
-            name,
-            email,
+            name: name || user.name,
+            email: email || user.email,
+            phone: null,
             orderId,
             category,
             message,
@@ -1522,6 +1830,109 @@ app.post("/support", async (req, res) => {
     } catch (error) {
         console.error("Support ticket creation failed:", error.message);
         res.status(503).json({ error: "Could not submit support request", detail: error.message });
+    }
+});
+
+app.get("/support/user/:email", async (req, res) => {
+    const email = String(req.params.email || "").trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: "Email is required" });
+    try {
+        await supportReady;
+        const [tickets] = await db.promise().query(
+            "SELECT * FROM support_tickets WHERE email = ? ORDER BY created_at DESC",
+            [email]
+        );
+        res.json(tickets);
+    } catch (error) {
+        console.error("User support tickets fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load support tickets" });
+    }
+});
+
+app.get("/support/:id/messages", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ticket id" });
+    try {
+        await supportReady;
+        const [tickets] = await db.promise().query("SELECT * FROM support_tickets WHERE id = ?", [id]);
+        if (!tickets[0]) return res.status(404).json({ error: "Ticket not found" });
+        const ticket = tickets[0];
+        const [replies] = await db.promise().query("SELECT * FROM support_replies WHERE ticket_id = ? ORDER BY created_at ASC", [id]);
+
+        const messages = [{
+            message: ticket.message,
+            is_customer_reply: true,
+            created_at: ticket.created_at
+        }, ...replies];
+
+        res.json(messages);
+    } catch (error) {
+        console.error("Support messages fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load messages" });
+    }
+});
+
+app.post("/support/:id/reply", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ticket id" });
+    const userId = Number(req.body?.userId);
+    const message = String(req.body?.message || "").trim();
+    if (!Number.isInteger(userId) || userId < 1 || !message) return res.status(400).json({ error: "User ID and reply message are required" });
+
+    try {
+        await databaseReady;
+        const [users] = await db.promise().query("SELECT email FROM users WHERE id = ?", [userId]);
+        if (!users[0]) return res.status(404).json({ error: "User not found" });
+        const userEmail = users[0].email;
+
+        await supportReady;
+        const [tickets] = await db.promise().query("SELECT * FROM support_tickets WHERE id = ? AND email = ?", [id, userEmail]);
+        if (!tickets[0]) return res.status(404).json({ error: "Ticket not found or access denied" });
+
+        await db.promise().query("INSERT INTO support_replies (ticket_id, message, is_customer_reply) VALUES (?, ?, ?)", [id, message, true]);
+
+        res.status(201).json({ message: "Reply added" });
+    } catch (error) {
+        console.error("Customer support reply failed:", error.message);
+        res.status(503).json({ error: "Could not add reply" });
+    }
+});
+
+app.post("/support/quick", async (req, res) => {
+    const body = req.body || {};
+    const userId = Number(body.userId);
+    const message = String(body.message || "").trim();
+
+    if (!Number.isInteger(userId) || userId < 1 || !message) {
+        return res.status(400).json({ error: "User ID and message are required" });
+    }
+
+    try {
+        await databaseReady;
+        const [users] = await db.promise().query("SELECT name, email FROM users WHERE id = ?", [userId]);
+        if (!users[0]) return res.status(404).json({ error: "User not found" });
+        const user = users[0];
+
+        await supportReady;
+
+        let orderId = "";
+        try {
+            const [orders] = await db.promise().query("SELECT id FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", [userId]);
+            if (orders[0]) orderId = orders[0].id;
+        } catch {}
+
+        const [result] = await db.promise().query(
+            "INSERT INTO support_tickets (name, email, phone, order_id, category, message) VALUES (?, ?, ?, ?, ?, ?)",
+            [user.name, user.email, null, orderId || null, "other", message]
+        );
+
+        res.status(201).json({
+            id: result.insertId,
+            message: "Quick support request submitted"
+        });
+    } catch (error) {
+        console.error("Quick support creation failed:", error.message);
+        res.status(503).json({ error: "Could not submit quick support request", detail: error.message });
     }
 });
 
@@ -1538,83 +1949,296 @@ app.get("/support/faq", async (req, res) => {
 
 app.post("/orders", async (req, res) => {
     const body = req.body || {};
+
     const userId = Number(body.userId);
     const items = Number(body.items);
     const address = String(body.address || "").trim();
+    const state = String(body.state || "").trim();
+    const pincode = String(body.pincode || "").trim();
     const couponCode = String(body.couponCode || "").trim().toUpperCase();
+
     const deliveryCharge = Number(body.deliveryCharge || 0);
     const subtotal = Number(body.subtotal || 0);
     const discount = Number(body.discount || 0);
-    const totalAmount = Number(body.totalAmount || 0) + deliveryCharge;
-    console.log(`[ORDERS] New order request: user=${userId} items=${items} subtotal=${subtotal} discount=${discount} delivery=${deliveryCharge} total=${totalAmount}`);
-    if (!Number.isInteger(userId) || userId < 1 || !Number.isInteger(items) || items < 1 || !address) return res.status(400).json({ error: "Valid user id, items, and address are required" });
+    const requestedTotal = Number(body.totalAmount);
+
+    const productIds = Array.isArray(body.productIds)
+        ? body.productIds
+            .map(Number)
+            .filter((id) => Number.isInteger(id) && id > 0)
+        : [];
+
+    const rawLineItems = Array.isArray(body.lineItems)
+        ? body.lineItems
+        : [];
+
+    const lineItems = rawLineItems.map((item) => {
+        if (!item || typeof item !== "object") return null;
+
+        return {
+            id: Number(item.id),
+            name: String(item.name || "").trim(),
+            price: Number(item.price || 0),
+            quantity: Number(item.quantity || 0),
+            image: String(item.image || "").trim(),
+            discount: Number(item.discount || 0)
+        };
+    });
+
+    const subtotalAfterDiscount = subtotal - discount;
+    const totalAmount = subtotalAfterDiscount + deliveryCharge;
+
+    console.log(
+        `[ORDERS] New order request: user=${userId} items=${items} subtotal=${subtotal} discount=${discount} delivery=${deliveryCharge} total=${totalAmount}`
+    );
+
+    // -----------------------------
+    // VALIDATION
+    // -----------------------------
+
+    if (
+        !Number.isInteger(userId) ||
+        userId < 1 ||
+
+        !Number.isInteger(items) ||
+        items < 1 ||
+
+        !address ||
+        !state ||
+        !/^\d{6}$/.test(pincode) ||
+
+        !Number.isFinite(subtotal) ||
+        subtotal < 0 ||
+
+        !Number.isFinite(discount) ||
+        discount < 0 ||
+        discount > subtotal ||
+
+        !Number.isFinite(deliveryCharge) ||
+        deliveryCharge < 0 ||
+
+        !Number.isFinite(requestedTotal) ||
+        Math.abs(requestedTotal - totalAmount) > 0.01 ||
+
+        !productIds.length ||
+
+        rawLineItems.length !== lineItems.length ||
+
+        !lineItems.length ||
+
+        lineItems.some(
+            (item) =>
+                !Number.isInteger(item.id) ||
+                item.id < 1 ||
+                !item.name ||
+                !Number.isFinite(item.quantity) ||
+                item.quantity < 1 ||
+                !Number.isFinite(item.price) ||
+                item.price < 0
+        ) ||
+
+        lineItems.reduce(
+            (sum, item) => sum + item.quantity,
+            0
+        ) !== items
+    ) {
+        return res.status(400).json({
+            error: "Valid user, items, address, pincode, state, and totals are required"
+        });
+    }
+
     try {
         await databaseReady;
         await ordersReady;
-        if (couponCode) {
-            await couponsReady;
-            const [[coupon]] = await db.promise().query("SELECT * FROM coupons WHERE code = ?", [couponCode]);
-            if (!coupon || !coupon.is_active) return res.status(400).json({ error: "Invalid coupon code" });
-            if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) return res.status(400).json({ error: "This coupon has expired" });
-            if (coupon.max_uses && coupon.used_count >= coupon.max_uses) return res.status(400).json({ error: "This coupon has reached its usage limit" });
-            await db.promise().query("UPDATE coupons SET used_count = used_count + 1 WHERE code = ?", [couponCode]);
-        }
-        const id = `SR${Date.now().toString().slice(-6)}`;
 
-        // 1. SAVE ORDER
-        await db.promise().query(
-    "INSERT INTO orders (id, user_id, items, address, delivery_charge, Total_Amount, coupon_code, coupon_discount, discount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [id, userId, items, address, deliveryCharge, totalAmount, couponCode || null, discount, discount]
-);
+        // -----------------------------
+        // GET USER
+        // -----------------------------
 
-        // 2. GET USER EMAIL
         const [[user]] = await db.promise().query(
-    "SELECT name, email FROM users WHERE id = ?",
-    [userId]
-);
-console.log("USER FROM DATABASE:", user);
-console.log("USER EMAIL:", user?.email);
+            "SELECT name, email FROM users WHERE id = ?",
+            [userId]
+        );
 
-        console.log(`[ORDERS] User lookup result:`, user);
+        console.log("[ORDERS] User lookup result:", user);
 
-        // 3. SEND ORDER CONFIRMATION EMAIL (fire-and-forget so the response is fast)
-        let emailSent = !!(emailTransporter && user && user.email);
-        let emailError = !emailSent
-            ? (!emailTransporter
-                ? "Email transporter not configured on server. Check EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env"
-                : "User has no email on file")
-            : null;
-        if (emailTransporter && user && user.email) {
-            (async () => {
-                try {
-                    const info = await sendOrderEmail({
-                        to: user.email,
-                        name: user.name,
-                        id,
-                        items,
-                        subtotal,
-                        discount,
-                        totalAmount,
-                        deliveryCharge,
-                        address,
-                        couponCode
-                    });
-                    const actualRecipient = user.email;
-                    const ccNote = ORDER_NOTIFICATION_EMAIL && ORDER_NOTIFICATION_EMAIL.toLowerCase() !== user.email.toLowerCase()
-                        ? ` (cc: ${ORDER_NOTIFICATION_EMAIL})`
-                        : "";
-                    console.log(`[ORDERS] Confirmation email sent. FROM: ${EMAIL_USER} -> TO: ${actualRecipient}${ccNote}. messageId=${info && info.messageId}`);
-                } catch (err) {
-                    console.error("[ORDERS] Order confirmation email failed:", err.message);
+        if (!user) {
+            return res.status(404).json({
+                error: "User not found"
+            });
+        }
+
+        // -----------------------------
+        // GET MYSQL CONNECTION
+        // -----------------------------
+
+        const connection = await db.promise().getConnection();
+
+        let transactionStarted = false;
+
+        // IMPORTANT:
+        // Declare ID outside the transaction
+        // because it is also needed for email + response.
+        let id = "";
+
+        try {
+            await connection.beginTransaction();
+            transactionStarted = true;
+
+            // -----------------------------
+            // COUPON
+            // -----------------------------
+
+            if (couponCode) {
+                await couponsReady;
+
+                const [[coupon]] = await connection.query(
+                    "SELECT * FROM coupons WHERE code = ? FOR UPDATE",
+                    [couponCode]
+                );
+
+                if (!coupon || !coupon.is_active) {
+                    throw new Error("Invalid coupon code");
                 }
-            })();
-        } else if (!emailTransporter) {
-            console.error("[ORDERS]", emailError);
+
+                if (
+                    coupon.expires_at &&
+                    new Date(coupon.expires_at) < new Date()
+                ) {
+                    throw new Error("This coupon has expired");
+                }
+
+                if (
+                    coupon.max_uses &&
+                    Number(coupon.used_count) >= Number(coupon.max_uses)
+                ) {
+                    throw new Error(
+                        "This coupon has reached its usage limit"
+                    );
+                }
+
+                const [couponResult] = await connection.query(
+                    "UPDATE coupons SET used_count = used_count + 1 WHERE code = ?",
+                    [couponCode]
+                );
+
+                if (!couponResult.affectedRows) {
+                    throw new Error(
+                        "Coupon is no longer available"
+                    );
+                }
+            }
+
+            // -----------------------------
+            // CREATE ORDER ID
+            // -----------------------------
+
+            id =
+                `SR${Date.now().toString(36).toUpperCase()}` +
+                crypto.randomBytes(2).toString("hex").toUpperCase();
+
+            // -----------------------------
+            // INSERT ORDER
+            // -----------------------------
+
+            await connection.query(
+                `INSERT INTO orders
+                (
+                    id,
+                    user_id,
+                    items,
+                    address,
+                    delivery_charge,
+                    Total_Amount,
+                    status,
+                    product_ids,
+                    line_items,
+                    coupon_code,
+                    coupon_discount,
+                    discount
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    id,
+                    userId,
+                    items,
+                    address,
+                    deliveryCharge,
+                    totalAmount,
+                    "placed",
+                    JSON.stringify(productIds),
+                    JSON.stringify(lineItems),
+                    couponCode || null,
+                    discount,
+                    discount
+                ]
+            );
+
+            await connection.commit();
+
+            console.log(
+                `[ORDERS] Order created successfully: ${id}`
+            );
+
+        } catch (error) {
+
+            if (transactionStarted) {
+                await connection.rollback();
+            }
+
+            throw error;
+
+        } finally {
+
+            // Correct MySQL2 connection release
+            connection.release();
+        }
+
+        // -----------------------------
+        // SEND CONFIRMATION EMAIL
+        // -----------------------------
+
+        let emailSent = false;
+        let emailError = null;
+
+        const confirmationRecipient =
+            user.email || ORDER_NOTIFICATION_EMAIL;
+
+        if (emailTransporter && confirmationRecipient) {
+
+            try {
+                const info = await sendOrderEmail({
+                    to: confirmationRecipient,
+                    name: user.name,
+                    id,
+                    items,
+                    subtotal,
+                    discount,
+                    totalAmount,
+                    deliveryCharge,
+                    address,
+                    couponCode
+                });
+                emailSent = true;
+                console.log(`[ORDERS] Confirmation email sent to ${confirmationRecipient}. messageId=${info?.messageId}`);
+            } catch (err) {
+                emailError = `Order confirmation email failed: ${err.message}`;
+                console.error("[ORDERS]", emailError);
+            }
+
         } else {
+
+            emailError = !emailTransporter
+                ? "Email transporter not configured on server. Check EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env"
+                : "No order confirmation recipient is available";
+
             console.warn("[ORDERS]", emailError);
         }
 
-        // 4. RESPONSE
+        // -----------------------------
+        // RESPONSE
+        // -----------------------------
+
         res.status(201).json({
             id,
             user_id: userId,
@@ -1623,13 +2247,20 @@ console.log("USER EMAIL:", user?.email);
             delivery_charge: deliveryCharge,
             total_amount: totalAmount,
             status: "placed",
-            emailSent: emailSent,
-            email: user ? user.email : null,
-            emailError: emailError
+
+            emailSent,
+            emailQueued: false,
+            email: confirmationRecipient || null,
+
+            emailError
         });
 
     } catch (error) {
-        console.error("Order creation failed:", error.message);
+
+        console.error(
+            "Order creation failed:",
+            error.message
+        );
 
         res.status(503).json({
             error: "Could not place order",

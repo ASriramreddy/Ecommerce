@@ -31,11 +31,14 @@
         ><input
           id="search-input"
           type="search"
-          placeholder="Search fresh items..."
+          placeholder="Search fresh itemso..."
           aria-label="Search fresh items"
         />
       </div>
       <div class="header-actions">
+        <a class="help-button" href="support.html" aria-label="Open customer support">
+          Help
+        </a>
         <button class="cart-button" id="notification-button" type="button" aria-label="Notifications" hidden>
           &#128276; <span id="notification-count">0</span>
         </button>
@@ -232,6 +235,25 @@
             </button>
           </div>
         </div>
+        <div class="details-reviews" id="details-reviews">
+          <div class="reviews-header">
+            <h3>Ratings & Reviews</h3>
+            <span class="reviews-average" id="reviews-average"></span>
+          </div>
+          <div class="reviews-list" id="reviews-list"></div>
+          <div class="review-form" id="review-form">
+            <h4>Write a review</h4>
+            <div class="star-rating-input" id="star-rating-input">
+              <button type="button" data-rating="1" aria-label="1 star">★</button>
+              <button type="button" data-rating="2" aria-label="2 stars">★</button>
+              <button type="button" data-rating="3" aria-label="3 stars">★</button>
+              <button type="button" data-rating="4" aria-label="4 stars">★</button>
+              <button type="button" data-rating="5" aria-label="5 stars">★</button>
+            </div>
+            <textarea id="review-comment" rows="3" placeholder="Share your experience with this product..."></textarea>
+            <button class="primary-button" id="submit-review" type="button">Submit Review</button>
+          </div>
+        </div>
       </article>
     </div>
     <div class="checkout-modal" id="checkout-modal" aria-hidden="true">
@@ -289,7 +311,9 @@
                 type="text"
                 placeholder="6-digit PIN"
                 pattern="[0-9]{6}"
+                maxlength="6"
                 inputmode="numeric"
+                autocomplete="postal-code"
                 required
               />
               <div class="pincode-popup" id="pincode-popup" aria-hidden="true">
@@ -429,6 +453,8 @@
           <div class="order-details-content">
             <div class="order-details-row"><span>Order ID</span><strong id="order-details-id"></strong></div>
             <div class="order-details-row"><span>Status</span><strong id="order-details-status"></strong></div>
+            <div class="order-tracking" id="order-tracking" aria-label="Order tracking"></div>
+            <div class="order-rate-actions" id="order-rate-actions"></div>
             <div class="order-details-row"><span>Items</span><strong id="order-details-items"></strong></div>
             <div class="order-details-row"><span>Coupon</span><strong id="order-details-coupon">—</strong></div>
             <div class="order-details-row"><span>Discount</span><strong id="order-details-discount">—</strong></div>
@@ -503,6 +529,7 @@
             Sign in to Sriram Store <span>&rarr;</span>
           </button>
         </form>
+        <p style="text-align:center;margin-top:12px;"><a href="#" id="forgot-password-link" style="color:var(--green);font-size:12px;">Forgot Password?</a></p>
         <form class="auth-form" id="register-form" novalidate>
           <label for="register-name">Full name</label>
           <div class="input-wrap">
@@ -646,6 +673,6 @@
         <p class="auth-error" id="profile-error" role="alert" aria-live="polite"></p>
       </div>
     </div>
-    <script src="script.js"></script>
+    <script src="script.js?v=20260918-order-fix"></script>
   </body>
 </html>

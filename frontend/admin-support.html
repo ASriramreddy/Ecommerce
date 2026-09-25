@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Customer Support Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 
 <style>
 * {
@@ -72,6 +74,134 @@ body {
     font-size: 28px;
 }
 
+.ticket-breakdown-card {
+    width: 100%;
+    border: 0;
+    padding: 20px;
+    border-radius: 12px;
+    background: white;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    color: #1f2937;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: box-shadow .2s ease, transform .2s ease;
+}
+
+.ticket-breakdown-card:hover,
+.ticket-breakdown-card:focus-visible {
+    box-shadow: 0 4px 14px rgba(37, 99, 235, .16);
+    outline: 3px solid #bfdbfe;
+    outline-offset: 2px;
+}
+
+.ticket-breakdown-card .stat-label {
+    display: block;
+    margin: 0 0 8px;
+    color: #6b7280;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.ticket-breakdown-hint {
+    display: block;
+    margin-top: 6px;
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.ticket-breakdown-row:focus-visible {
+    outline: 3px solid #93c5fd;
+    outline-offset: 2px;
+}
+
+.ticket-breakdown-row {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 16px;
+    border: 0;
+    padding: 15px 0;
+    border-bottom: 1px solid #e5e7eb;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ticket-breakdown-row:last-child {
+    border-bottom: 0;
+}
+
+.ticket-breakdown-row:disabled {
+    opacity: .55;
+    cursor: default;
+}
+
+.ticket-breakdown-label {
+    color: #374151;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.ticket-breakdown-count {
+    min-width: 32px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #2563eb;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: right;
+}
+
+.category-filter {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.category-filter .ticket-breakdown-row {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: white;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+}
+
+.category-filter .ticket-breakdown-row:hover:not(:disabled),
+.category-filter .ticket-breakdown-row.active {
+    border-color: #2563eb;
+    background: #eff6ff;
+}
+
+.ticket-breakdown-bar {
+    grid-column: 1 / -1;
+    height: 5px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e5e7eb;
+}
+
+.ticket-breakdown-bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #2563eb;
+}
+
+.ticket-breakdown-empty {
+    padding: 28px 0 18px;
+    color: #6b7280;
+    text-align: center;
+}
+
 /* FILTER */
 
 .toolbar {
@@ -109,7 +239,8 @@ body {
 
 .dashboard {
     display: grid;
-    grid-template-columns: 420px 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
     gap: 18px;
 }
 
@@ -124,40 +255,91 @@ body {
     overflow-y: auto;
 }
 
-.ticket {
-    padding: 16px;
-    border-bottom: 1px solid #eee;
-    cursor: pointer;
+.ticket-table-wrap {
+    overflow-x: auto;
 }
 
-.ticket:hover,
-.ticket.active {
+.ticket-table {
+    width: 100%;
+    min-width: 0;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 13px;
+}
+
+.ticket-table th {
+    padding: 12px 14px;
+    border-bottom: 1px solid #dbe3ee;
+    background: #eef5ff;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.ticket-table td {
+    padding: 13px 14px;
+    border-bottom: 1px solid #edf0f4;
+    color: #374151;
+    vertical-align: middle;
+}
+
+.ticket-table th:nth-child(1),
+.ticket-table td:nth-child(1) { width: 105px; }
+.ticket-table th:nth-child(2),
+.ticket-table td:nth-child(2) { width: 190px; }
+.ticket-table th:nth-child(3),
+.ticket-table td:nth-child(3) { width: 110px; }
+.ticket-table th:nth-child(4),
+.ticket-table td:nth-child(4) { width: 140px; }
+.ticket-table th:nth-child(6),
+.ticket-table td:nth-child(6) { width: 115px; }
+.ticket-table th:nth-child(7),
+.ticket-table td:nth-child(7) { width: 170px; }
+
+.ticket-table tbody tr {
+    cursor: pointer;
+    transition: background .15s ease;
+}
+
+.ticket-table tbody tr:hover,
+.ticket-table tbody tr.active {
     background: #eff6ff;
 }
 
-.ticket-top {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
+.ticket-id {
+    color: #2563eb;
+    font-weight: 700;
+    white-space: nowrap;
 }
 
-.ticket-name {
-    font-weight: bold;
+.ticket-customer strong,
+.ticket-customer span,
+.ticket-message {
+    display: block;
 }
 
-.ticket-email {
+.ticket-customer span,
+.ticket-order,
+.ticket-message,
+.ticket-date {
     color: #6b7280;
-    font-size: 13px;
-    margin-top: 4px;
+    font-size: 12px;
+}
+
+.ticket-customer span,
+.ticket-order,
+.ticket-date {
+    margin-top: 3px;
 }
 
 .ticket-message {
-    margin-top: 8px;
-    font-size: 14px;
-    color: #374151;
-    white-space: nowrap;
+    max-width: none;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .badge {
@@ -193,8 +375,10 @@ body {
     background: white;
     border-radius: 12px;
     min-height: 650px;
+    min-width: 0;
     display: flex;
     flex-direction: column;
+    scroll-margin-top: 20px;
 }
 
 .conversation-header {
@@ -214,6 +398,7 @@ body {
 .messages {
     flex: 1;
     padding: 20px;
+    min-height: 0;
     overflow-y: auto;
     max-height: 440px;
 }
@@ -326,6 +511,19 @@ body {
         max-width: 90%;
     }
 
+    .ticket-breakdown-row {
+        gap: 12px;
+        padding: 13px 0;
+    }
+
+    .ticket-breakdown-label {
+        font-size: 14px;
+    }
+
+    .category-filter {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .reply-actions {
         flex-direction: column;
     }
@@ -334,6 +532,15 @@ body {
     .reply-actions button {
         width: 100%;
     }
+    .section-title {
+    padding: 18px;
+    border-bottom: 1px solid #eee;
+}
+
+.section-title h2 {
+    margin: 0;
+    font-size: 20px;
+}
 }
 </style>
 </head>
@@ -348,26 +555,48 @@ body {
 <div class="container">
 
     <div class="stats">
-        <div class="stat">
-            <h3>Total Tickets</h3>
+        <button
+            class="stat ticket-breakdown-card"
+            type="button"
+            onclick="filterByStatus('')"
+        >
+            <span class="stat-label">Total Tickets</span>
             <strong id="totalTickets">0</strong>
-        </div>
+            <span class="ticket-breakdown-hint">View category breakdown</span>
+        </button>
 
-        <div class="stat">
-            <h3>Open</h3>
+        <button
+            class="stat ticket-breakdown-card"
+            type="button"
+            onclick="filterByStatus('open')"
+        >
+            <span class="stat-label">Open</span>
             <strong id="openTickets">0</strong>
-        </div>
+            <span class="ticket-breakdown-hint">View open</span>
+        </button>
 
-        <div class="stat">
-            <h3>In Progress</h3>
+        <button
+            class="stat ticket-breakdown-card"
+            type="button"
+            onclick="filterByStatus('in_progress')"
+        >
+            <span class="stat-label">In Progress</span>
             <strong id="progressTickets">0</strong>
-        </div>
+            <span class="ticket-breakdown-hint">View in-progress</span>
+        </button>
 
-        <div class="stat">
-            <h3>Resolved</h3>
+        <button
+            class="stat ticket-breakdown-card"
+            type="button"
+            onclick="filterByStatus('resolved')"
+        >
+            <span class="stat-label">Resolved</span>
             <strong id="resolvedTickets">0</strong>
-        </div>
+            <span class="ticket-breakdown-hint">View resolved</span>
+        </button>
     </div>
+
+    <div class="category-filter" id="categoryFilter" aria-label="Filter tickets by category"></div>
 
     <div class="toolbar">
 
@@ -387,6 +616,11 @@ body {
         </select>
 
         <button onclick="loadTickets()">Refresh</button>
+        <select id="downloadFormat" aria-label="Download format">
+            <option value="csv">CSV</option>
+            <option value="pdf">PDF</option>
+        </select>
+        <button type="button" onclick="downloadTickets()">Download</button>
 
     </div>
 
@@ -394,13 +628,13 @@ body {
 
         <div class="tickets">
 
-            <div class="ticket-list" id="ticketList">
+            <div class="ticket-list ticket-table-wrap" id="ticketList">
                 <div class="empty">Loading tickets...</div>
             </div>
 
         </div>
 
-        <div class="conversation">
+        <div class="conversation" id="conversationPanel" tabindex="-1" aria-live="polite">
 
             <div id="conversationContent">
 
@@ -424,12 +658,29 @@ CHANGE THIS TO YOUR RENDER BACKEND URL
 ====================================================
 */
 
-const API_BASE =
-    "https://YOUR-RENDER-BACKEND.onrender.com";
+const API_BASE = "https://ecommerce-1-r5m4.onrender.com";
+const API = API_BASE;
 
 
 let tickets = [];
 let selectedTicket = null;
+let activeTicketStatus = "all";
+let activeTicketCategory = "";
+
+const ticketStatusLabels = {
+    all: "Total Tickets",
+    open: "Open Tickets",
+    in_progress: "In Progress Tickets",
+    resolved: "Resolved Tickets"
+};
+
+const ticketCategories = [
+    { value: "order", label: "Order Issues" },
+    { value: "delivery", label: "Delivery Issues" },
+    { value: "return", label: "Returns & Refunds" },
+    { value: "product", label: "Product Issues" },
+    { value: "coupon", label: "Coupon/Offers" },
+];
 
 
 /* ADMIN TOKEN */
@@ -437,6 +688,7 @@ let selectedTicket = null;
 function getToken() {
 
     return (
+        localStorage.getItem("sriram-admin-token") ||
         localStorage.getItem("adminToken") ||
         localStorage.getItem("admin_token") ||
         sessionStorage.getItem("adminToken")
@@ -445,9 +697,9 @@ function getToken() {
 }
 
 
-/* API REQUEST */
+/* apiRequest(...) REQUEST */
 
-async function api(url, options = {}) {
+async function apiRequest(url, options = {}) {
 
     const token = getToken();
 
@@ -487,19 +739,15 @@ async function loadTickets() {
 
     try {
 
-        const status =
-            document.getElementById("statusFilter").value;
+        const url = `/admin/support`;
 
-        const url = status
-            ? `/admin/support?status=${encodeURIComponent(status)}`
-            : `/admin/support`;
-
-        const data = await api(url);
+        const data = await apiRequest(url);
 
         if (!data) return;
 
         tickets = Array.isArray(data) ? data : [];
-
+        activeTicketStatus =
+            document.getElementById("statusFilter").value || "all";
         updateStats();
         renderTickets();
 
@@ -531,6 +779,159 @@ function updateStats() {
 
     document.getElementById("resolvedTickets").textContent =
         tickets.filter(t => t.status === "resolved").length;
+
+    renderCategoryFilter();
+}
+
+
+function getTicketsForBreakdown() {
+
+    if (activeTicketStatus === "all") {
+        return tickets;
+    }
+
+    return tickets.filter(ticket => ticket.status === activeTicketStatus);
+}
+
+
+function normalizeTicketCategory(category) {
+
+    const value = String(category || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    if ([
+        "order",
+        "order issue",
+        "order issues"
+    ].includes(value)) {
+        return "order";
+    }
+
+    if ([
+        "delivery",
+        "delivery issue",
+        "delivery issues"
+    ].includes(value)) {
+        return "delivery";
+    }
+
+    if ([
+        "return",
+        "returns",
+        "refund",
+        "refunds",
+        "return refund",
+        "returns refund",
+        "return refunds",
+        "returns refunds"
+    ].includes(value)) {
+        return "return";
+    }
+
+    if ([
+        "product",
+        "product issue",
+        "product issues",
+        "product quality"
+    ].includes(value)) {
+        return "product";
+    }
+
+    if ([
+        "coupon",
+        "coupons",
+        "offer",
+        "offers",
+        "coupon offer",
+        "coupon offers",
+        "coupons offers"
+    ].includes(value)) {
+        return "coupon";
+    }
+
+    return "";
+}
+
+
+function getTicketBreakdown() {
+
+    const breakdownTickets = getTicketsForBreakdown();
+    const counts = Object.fromEntries(
+        ticketCategories.map(category => [category.value, 0])
+    );
+
+    breakdownTickets.forEach(ticket => {
+        const category = normalizeTicketCategory(ticket.category);
+
+        if (counts[category] !== undefined) {
+            counts[category] += 1;
+        }
+    });
+
+    return ticketCategories.map(category => ({
+        ...category,
+        count: counts[category.value]
+    }));
+}
+
+
+function renderCategoryFilter() {
+
+    const breakdown = getTicketBreakdown();
+    const breakdownTickets = getTicketsForBreakdown();
+    const total = breakdownTickets.length;
+    const list = document.getElementById("categoryFilter");
+    if (!list) return;
+
+    list.innerHTML = breakdown.map(category => {
+        const width = total
+            ? Math.round((category.count / total) * 100)
+            : 0;
+        const activeClass =
+            activeTicketCategory === category.value ? "active" : "";
+
+        return `
+            <button
+                class="ticket-breakdown-row ${activeClass}"
+                type="button"
+                onclick="filterByCategory('${category.value}')"
+                ${category.count ? "" : "disabled"}
+            >
+                <span class="ticket-breakdown-label">
+                    ${escapeHtml(category.label)}
+                </span>
+                <strong class="ticket-breakdown-count">
+                    ${category.count}
+                </strong>
+                <div class="ticket-breakdown-bar" aria-hidden="true">
+                    <span style="width: ${width}%"></span>
+                </div>
+            </button>
+        `;
+    }).join("");
+}
+
+
+function filterByCategory(category) {
+    activeTicketCategory = category || "";
+    renderTickets();
+    renderCategoryFilter();
+}
+
+
+function filterByStatus(status) {
+    const statusFilter = document.getElementById("statusFilter");
+    if (!statusFilter) return;
+
+    statusFilter.value = status || "";
+    activeTicketStatus = status || "all";
+    activeTicketCategory = "";
+    renderTickets();
+    renderCategoryFilter();
 }
 
 
@@ -545,29 +946,45 @@ function renderTickets() {
             .toLowerCase()
             .trim();
 
-    const filtered = tickets.filter(ticket => {
+    const status =
+        document.getElementById("statusFilter").value;
 
-        return (
+    const filtered = tickets.filter(ticket => {
+        const matchesStatus = !status || ticket.status === status;
+        const matchesCategory = !activeTicketCategory ||
+            normalizeTicketCategory(ticket.category) === activeTicketCategory;
+        const matchesSearch =
             String(ticket.id).includes(search) ||
             String(ticket.name || "").toLowerCase().includes(search) ||
             String(ticket.email || "").toLowerCase().includes(search) ||
-            String(ticket.message || "").toLowerCase().includes(search)
-        );
+            String(ticket.message || "").toLowerCase().includes(search);
 
+        return matchesStatus && matchesCategory && matchesSearch;
     });
 
     if (!filtered.length) {
-
         list.innerHTML =
             `<div class="empty">
                 No support tickets found.
             </div>`;
-
         return;
     }
 
-    list.innerHTML = filtered.map(ticket => {
-
+    list.innerHTML = `
+        <table class="ticket-table">
+            <thead>
+                <tr>
+                    <th>Ticket ID</th>
+                    <th>Customer</th>
+                    <th>Order</th>
+                    <th>Category</th>
+                    <th>Message</th>
+                    <th>Status</th>
+                    <th>Created At</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${filtered.map(ticket => {
         const active =
             selectedTicket &&
             Number(selectedTicket.id) === Number(ticket.id)
@@ -575,39 +992,31 @@ function renderTickets() {
                 : "";
 
         return `
-            <div
+            <tr
                 class="ticket ${active}"
+                tabindex="0"
+                role="button"
+                aria-label="Open ticket #${ticket.id} conversation"
                 onclick="openTicket(${ticket.id})"
+                onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openTicket(${ticket.id}); }"
             >
-
-                <div class="ticket-top">
-
-                    <div>
-                        <div class="ticket-name">
-                            #${ticket.id} - ${escapeHtml(ticket.name)}
-                        </div>
-
-                        <div class="ticket-email">
-                            ${escapeHtml(ticket.email)}
-                        </div>
-                    </div>
-
-                    <span class="badge ${ticket.status}">
-                        ${formatStatus(ticket.status)}
-                    </span>
-
-                </div>
-
-                <div class="ticket-message">
-                    ${escapeHtml(ticket.message)}
-                </div>
-
-            </div>
+                <td class="ticket-id">#${ticket.id}</td>
+                <td class="ticket-customer">
+                    <strong>${escapeHtml(ticket.name)}</strong>
+                    <span>${escapeHtml(ticket.email)}</span>
+                </td>
+                <td class="ticket-order">${ticket.order_id ? `#${escapeHtml(ticket.order_id)}` : "-"}</td>
+                <td>${escapeHtml(ticket.category || "-")}</td>
+                <td class="ticket-message" title="${escapeHtml(ticket.message)}">${escapeHtml(ticket.message)}</td>
+                <td><span class="badge ${escapeHtml(ticket.status)}">${formatStatus(ticket.status)}</span></td>
+                <td class="ticket-date">${formatDate(ticket.created_at)}</td>
+            </tr>
         `;
-
-    }).join("");
+                }).join("")}
+            </tbody>
+        </table>
+    `;
 }
-
 
 /* SEARCH */
 
@@ -615,6 +1024,123 @@ function filterTickets() {
     renderTickets();
 }
 
+function getVisibleTickets() {
+    const search = document.getElementById("search").value.toLowerCase().trim();
+    const status = document.getElementById("statusFilter").value;
+
+    return tickets.filter(ticket => {
+        const matchesStatus = !status || ticket.status === status;
+        const matchesCategory = !activeTicketCategory ||
+            normalizeTicketCategory(ticket.category) === activeTicketCategory;
+        const matchesSearch =
+            String(ticket.id).includes(search) ||
+            String(ticket.name || "").toLowerCase().includes(search) ||
+            String(ticket.email || "").toLowerCase().includes(search) ||
+            String(ticket.message || "").toLowerCase().includes(search);
+
+        return matchesStatus && matchesCategory && matchesSearch;
+    });
+}
+
+function downloadFile(content, filename, type) {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
+function getTicketExportRows() {
+    return getVisibleTickets().map(ticket => [
+        ticket.id,
+        ticket.name || "",
+        ticket.email || "",
+        ticket.order_id || "",
+        ticket.category || "",
+        formatStatus(ticket.status),
+        formatDate(ticket.created_at),
+        ticket.message || ""
+    ]);
+}
+
+function downloadTicketsCsv(rows) {
+    const headers = ["Ticket ID", "Customer", "Email", "Order ID", "Category", "Status", "Created At", "Message"];
+    const csv = [headers, ...rows].map(row => row.map(value => {
+        const escaped = String(value ?? "").replace(/"/g, '""');
+        return /[",\n]/.test(escaped) ? `"${escaped}"` : escaped;
+    }).join(",")).join("\n");
+
+    downloadFile("\ufeff" + csv, `support-tickets-${new Date().toISOString().slice(0, 10)}.csv`, "text/csv;charset=utf-8");
+}
+
+function downloadTicketsPdf(rows) {
+    const jsPDF = window.jspdf?.jsPDF;
+    if (typeof jsPDF !== "function") {
+        alert("PDF export is unavailable. Please check your connection and try again.");
+        return;
+    }
+
+    const pdfDocument = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    if (typeof pdfDocument.autoTable !== "function") {
+        alert("PDF table export is unavailable. Please check your connection and try again.");
+        return;
+    }
+
+    pdfDocument.setFontSize(15);
+    pdfDocument.text("Customer Support Tickets", 14, 12);
+    pdfDocument.setFontSize(9);
+    pdfDocument.text(`Generated: ${new Date().toLocaleString()}`, 14, 19);
+    pdfDocument.autoTable({
+        startY: 24,
+        head: [["Ticket ID", "Customer", "Email", "Order ID", "Category", "Status", "Created At", "Message"]],
+        body: rows.map(row => row.map(value => String(value ?? ""))),
+        theme: "grid",
+        styles: {
+            font: "helvetica",
+            fontSize: 7,
+            cellPadding: 1.2,
+            overflow: "linebreak"
+        },
+        headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: "bold"
+        },
+        alternateRowStyles: {
+            fillColor: [248, 250, 252]
+        },
+        columnStyles: {
+            0: { cellWidth: 18 },
+            1: { cellWidth: 32 },
+            2: { cellWidth: 38 },
+            3: { cellWidth: 22 },
+            4: { cellWidth: 28 },
+            5: { cellWidth: 25 },
+            6: { cellWidth: 35 },
+            7: { cellWidth: 70 }
+        }
+    });
+    pdfDocument.save(`support-tickets-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+function downloadTickets() {
+    const rows = getTicketExportRows();
+    if (!rows.length) {
+        alert("No tickets to download.");
+        return;
+    }
+
+    const format = document.getElementById("downloadFormat").value;
+    if (format === "pdf") {
+        downloadTicketsPdf(rows);
+    } else {
+        downloadTicketsCsv(rows);
+    }
+}
 
 /* OPEN TICKET */
 
@@ -622,7 +1148,7 @@ async function openTicket(id) {
 
     try {
 
-        const ticket = await api(`/admin/support/${id}`);
+        const ticket = await apiRequest(`/admin/support/${id}`);
 
         if (!ticket) return;
 
@@ -631,9 +1157,15 @@ async function openTicket(id) {
         renderTickets();
 
         const replies =
-            await api(`/admin/support/${id}/replies`);
+            await apiRequest(`/admin/support/${id}/replies`);
 
         renderConversation(ticket, replies || []);
+
+        const conversationPanel = document.getElementById("conversationPanel");
+        if (conversationPanel) {
+            conversationPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+            conversationPanel.focus({ preventScroll: true });
+        }
 
     } catch (error) {
 
@@ -781,7 +1313,7 @@ async function sendReply() {
 
     try {
 
-        await api(
+        await apiRequest(
             `/admin/support/${selectedTicket.id}/replies`,
             {
                 method: "POST",
@@ -815,7 +1347,7 @@ async function updateStatus() {
 
     try {
 
-        await api(
+        await apiRequest(
             `/admin/support/${selectedTicket.id}`,
             {
                 method: "PATCH",
@@ -842,6 +1374,7 @@ async function updateStatus() {
 
 function logout() {
 
+    localStorage.removeItem("sriram-admin-token");
     localStorage.removeItem("adminToken");
     localStorage.removeItem("admin_token");
     sessionStorage.removeItem("adminToken");
@@ -881,7 +1414,11 @@ function escapeHtml(value) {
 
 /* START */
 
-loadTickets();
+if (!getToken()) {
+    window.location.href = "admin-login.html?redirect=" + encodeURIComponent("admin-support.html");
+} else {
+    loadTickets();
+}
 
 </script>
 
