@@ -1,0 +1,1822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Customer Support Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f5f7fb;
+    color: #1f2937;
+}
+
+.header {
+    background: #111827;
+    color: white;
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 22px;
+}
+
+.header-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.broadcast-btn {
+    border: 0;
+    background: #2563eb;
+    color: white;
+    padding: 9px 15px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background .2s;
+}
+
+.broadcast-btn:hover {
+    background: #1d4ed8;
+}
+
+.header button {
+    border: 0;
+    background: #ef4444;
+    color: white;
+    padding: 9px 15px;
+    border-radius: 7px;
+    cursor: pointer;
+}
+
+/* Broadcast Modal */
+.broadcast-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.broadcast-modal-overlay.open {
+    display: flex;
+}
+
+.broadcast-modal {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    width: 100%;
+    max-width: 500px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+
+.broadcast-modal h2 {
+    margin: 0 0 16px;
+    font-size: 20px;
+    color: #1f2937;
+}
+
+.broadcast-modal label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #374151;
+}
+
+.broadcast-modal textarea {
+    width: 100%;
+    min-height: 120px;
+    padding: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    resize: vertical;
+    margin-bottom: 16px;
+}
+
+.broadcast-modal textarea:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+}
+
+.broadcast-modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.broadcast-modal-actions button {
+    padding: 10px 20px;
+    border-radius: 7px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.broadcast-modal-actions .cancel-btn {
+    background: white;
+    border: 1px solid #d1d5db;
+    color: #374151;
+}
+
+.broadcast-modal-actions .send-btn {
+    background: #2563eb;
+    border: 0;
+    color: white;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+/* STATISTICS */
+
+.stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+    margin-bottom: 22px;
+}
+
+.stat {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+}
+
+.stat h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    color: #6b7280;
+}
+
+.stat strong {
+    font-size: 28px;
+}
+
+.ticket-breakdown-card {
+    width: 100%;
+    border: 0;
+    padding: 20px;
+    border-radius: 12px;
+    background: white;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    color: #1f2937;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: box-shadow .2s ease, transform .2s ease;
+}
+
+.ticket-breakdown-card:hover,
+.ticket-breakdown-card:focus-visible {
+    box-shadow: 0 4px 14px rgba(37, 99, 235, .16);
+    outline: 3px solid #bfdbfe;
+    outline-offset: 2px;
+}
+
+.ticket-breakdown-card .stat-label {
+    display: block;
+    margin: 0 0 8px;
+    color: #6b7280;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.ticket-breakdown-hint {
+    display: block;
+    margin-top: 6px;
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.ticket-breakdown-row:focus-visible {
+    outline: 3px solid #93c5fd;
+    outline-offset: 2px;
+}
+
+.ticket-breakdown-row {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 16px;
+    border: 0;
+    padding: 15px 0;
+    border-bottom: 1px solid #e5e7eb;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ticket-breakdown-row:last-child {
+    border-bottom: 0;
+}
+
+.ticket-breakdown-row:disabled {
+    opacity: .55;
+    cursor: default;
+}
+
+.ticket-breakdown-label {
+    color: #374151;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.ticket-breakdown-count {
+    min-width: 32px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #2563eb;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: right;
+}
+
+.category-filter {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.category-filter .ticket-breakdown-row {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: white;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+}
+
+.category-filter .ticket-breakdown-row:hover:not(:disabled),
+.category-filter .ticket-breakdown-row.active {
+    border-color: #2563eb;
+    background: #eff6ff;
+}
+
+.ticket-breakdown-bar {
+    grid-column: 1 / -1;
+    height: 5px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e5e7eb;
+}
+
+.ticket-breakdown-bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #2563eb;
+}
+
+.ticket-breakdown-empty {
+    padding: 28px 0 18px;
+    color: #6b7280;
+    text-align: center;
+}
+
+/* FILTER */
+
+.toolbar {
+    background: white;
+    padding: 15px;
+    border-radius: 12px;
+    display: flex;
+    gap: 12px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+}
+
+.toolbar input,
+.toolbar select {
+    padding: 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 7px;
+}
+
+.toolbar input {
+    flex: 1;
+    min-width: 200px;
+}
+
+.toolbar button {
+    background: #2563eb;
+    color: white;
+    border: 0;
+    padding: 10px 17px;
+    border-radius: 7px;
+    cursor: pointer;
+}
+
+/* LAYOUT */
+
+.dashboard {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 18px;
+}
+
+.tickets {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.ticket-list {
+    max-height: 650px;
+    overflow-y: auto;
+}
+
+.ticket-table-wrap {
+    overflow-x: auto;
+}
+
+.ticket-table {
+    width: 100%;
+    min-width: 0;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 13px;
+}
+
+.ticket-table th {
+    padding: 12px 14px;
+    border-bottom: 1px solid #dbe3ee;
+    background: #eef5ff;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.ticket-table td {
+    padding: 13px 14px;
+    border-bottom: 1px solid #edf0f4;
+    color: #374151;
+    vertical-align: middle;
+}
+
+.ticket-table th:nth-child(1),
+.ticket-table td:nth-child(1) { width: 105px; }
+.ticket-table th:nth-child(2),
+.ticket-table td:nth-child(2) { width: 190px; }
+.ticket-table th:nth-child(3),
+.ticket-table td:nth-child(3) { width: 110px; }
+.ticket-table th:nth-child(4),
+.ticket-table td:nth-child(4) { width: 140px; }
+.ticket-table th:nth-child(6),
+.ticket-table td:nth-child(6) { width: 115px; }
+.ticket-table th:nth-child(7),
+.ticket-table td:nth-child(7) { width: 170px; }
+
+.ticket-table tbody tr {
+    cursor: pointer;
+    transition: background .15s ease;
+}
+
+.ticket-table tbody tr:hover,
+.ticket-table tbody tr.active {
+    background: #eff6ff;
+}
+
+.ticket-id {
+    color: #2563eb;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.ticket-customer strong,
+.ticket-customer span,
+.ticket-message {
+    display: block;
+}
+
+.ticket-customer span,
+.ticket-order,
+.ticket-message,
+.ticket-date {
+    color: #6b7280;
+    font-size: 12px;
+}
+
+.ticket-customer span,
+.ticket-order,
+.ticket-date {
+    margin-top: 3px;
+}
+
+.ticket-message {
+    max-width: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.badge {
+    padding: 4px 8px;
+    border-radius: 20px;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.open {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.in_progress {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.resolved {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.closed {
+    background: #e5e7eb;
+    color: #374151;
+}
+
+/* CONVERSATION */
+
+.conversation {
+    background: white;
+    border-radius: 12px;
+    min-height: 650px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    scroll-margin-top: 20px;
+}
+
+.conversation-header {
+    padding: 18px;
+    border-bottom: 1px solid #eee;
+}
+
+.conversation-header h2 {
+    margin: 0 0 8px;
+}
+
+.customer-info {
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.messages {
+    flex: 1;
+    padding: 20px;
+    min-height: 0;
+    overflow-y: auto;
+    max-height: 440px;
+}
+
+.message {
+    max-width: 75%;
+    padding: 12px 15px;
+    margin-bottom: 12px;
+    border-radius: 12px;
+}
+
+.customer {
+    background: #f3f4f6;
+    margin-right: auto;
+}
+
+.admin {
+    background: #dbeafe;
+    margin-left: auto;
+}
+
+.message-label {
+    font-size: 11px;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.message-time {
+    font-size: 10px;
+    color: #6b7280;
+    margin-top: 5px;
+}
+
+/* REPLY */
+
+.reply-box {
+    padding: 15px;
+    border-top: 1px solid #eee;
+}
+
+.reply-box textarea {
+    width: 100%;
+    min-height: 90px;
+    resize: vertical;
+    padding: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+}
+
+.reply-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.reply-actions select,
+.reply-actions button {
+    padding: 10px 14px;
+    border-radius: 7px;
+    border: 1px solid #d1d5db;
+}
+
+.reply-actions button {
+    background: #2563eb;
+    color: white;
+    border: 0;
+    cursor: pointer;
+}
+
+.empty {
+    padding: 40px;
+    text-align: center;
+    color: #6b7280;
+}
+
+/* MOBILE */
+
+@media (max-width: 800px) {
+
+    .header {
+        padding: 14px;
+    }
+
+    .header h1 {
+        font-size: 18px;
+    }
+
+    .container {
+        padding: 0 10px;
+        margin-top: 15px;
+    }
+
+    .stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .dashboard {
+        grid-template-columns: 1fr;
+    }
+
+    .ticket-list {
+        max-height: 400px;
+    }
+
+    .conversation {
+        min-height: 600px;
+    }
+
+    .message {
+        max-width: 90%;
+    }
+
+    .ticket-breakdown-row {
+        gap: 12px;
+        padding: 13px 0;
+    }
+
+    .ticket-breakdown-label {
+        font-size: 14px;
+    }
+
+    .category-filter {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .reply-actions {
+        flex-direction: column;
+    }
+
+    .reply-actions select,
+    .reply-actions button {
+        width: 100%;
+    }
+    .section-title {
+    padding: 18px;
+    border-bottom: 1px solid #eee;
+}
+
+.section-title h2 {
+    margin: 0;
+    font-size: 20px;
+}
+}
+</style>
+</head>
+
+<body>
+
+<header class="header">
+    <h1>🎧 Customer Support Dashboard</h1>
+    <div class="header-actions">
+      <button class="broadcast-btn" id="broadcast-btn" type="button" onclick="openBroadcastModal()">📢 Send Notification</button>
+      <button onclick="logout()">Logout</button>
+    </div>
+  </header>
+
+  <!-- Broadcast Notification Modal -->
+  <div class="broadcast-modal-overlay" id="broadcast-modal-overlay" onclick="closeBroadcastModal(event)">
+    <div class="broadcast-modal" onclick="event.stopPropagation()">
+      <h2>📢 Send Broadcast Notification</h2>
+      <label for="broadcast-message">Message (sent to all users)</label>
+      <textarea id="broadcast-message" placeholder="Enter your notification message..."></textarea>
+      <div class="broadcast-modal-actions">
+        <button class="cancel-btn" onclick="closeBroadcastModal()">Cancel</button>
+        <button class="send-btn" onclick="sendBroadcastNotification()">Send to All Users</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <div class="stats">
+        <button
+            class="stat ticket-breakdown-card"
+            type="button"
+            onclick="filterByStatus('')"
+        >
+            <span class="stat-label">Total Tickets</span>
+            <strong id="totalTickets">0</strong>
+            <span class="ticket-breakdown-hint">View category breakdown</span>
+        </button>
+
+        <button
+            class="stat ticket-breakdown-card"
+            type="button"
+            onclick="filterByStatus('open')"
+        >
+            <span class="stat-label">Open</span>
+            <strong id="openTickets">0</strong>
+            <span class="ticket-breakdown-hint">View open</span>
+        </button>
+
+        <button
+            class="stat ticket-breakdown-card"
+            type="button"
+            onclick="filterByStatus('in_progress')"
+        >
+            <span class="stat-label">In Progress</span>
+            <strong id="progressTickets">0</strong>
+            <span class="ticket-breakdown-hint">View in-progress</span>
+        </button>
+
+        <button
+            class="stat ticket-breakdown-card"
+            type="button"
+            onclick="filterByStatus('resolved')"
+        >
+            <span class="stat-label">Resolved</span>
+            <strong id="resolvedTickets">0</strong>
+            <span class="ticket-breakdown-hint">View resolved</span>
+        </button>
+    </div>
+
+    <!-- Pie Chart Section -->
+    <div class="chart-section" style="margin-bottom: 22px;">
+        <div class="chart-card" style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.06); padding: 20px;">
+            <h3 style="margin: 0 0 16px; font-size: 16px; color: #374151; font-weight: 600;">Tickets by Category</h3>
+            <div style="position: relative; height: 300px; max-width: 500px; margin: 0 auto;">
+                <canvas id="categoryPieChart"></canvas>
+            </div>
+            <div id="pieChartLegend" style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 16px; font-size: 13px;"></div>
+        </div>
+    </div>
+
+    <!-- Category-Status Breakdown Chart -->
+    <div class="chart-section" style="margin-bottom: 22px;">
+        <div class="chart-card" style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.06); padding: 20px;">
+            <h3 style="margin: 0 0 16px; font-size: 16px; color: #374151; font-weight: 600;">Category vs Status Breakdown</h3>
+            <div style="position: relative; height: 300px; max-width: 800px; margin: 0 auto;">
+                <canvas id="categoryStatusChart"></canvas>
+            </div>
+            <div id="categoryStatusLegend" style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 16px; font-size: 13px;"></div>
+        </div>
+    </div>
+
+    <div class="category-filter" id="categoryFilter" aria-label="Filter tickets by category"></div>
+
+    <div class="toolbar">
+
+        <input
+            type="text"
+            id="search"
+            placeholder="Search customer, email or ticket..."
+            oninput="filterTickets()"
+        >
+
+        <select id="statusFilter" onchange="loadTickets()">
+            <option value="">All Status</option>
+            <option value="open">Open</option>
+            <option value="in_progress">In Progress</option>
+            <option value="resolved">Resolved</option>
+            <option value="closed">Closed</option>
+        </select>
+
+        <select id="downloadFormat" style="min-width: 120px;">
+            <option value="csv">Download CSV</option>
+            <option value="pdf">Download PDF</option>
+        </select>
+
+        <button onclick="downloadTickets()">Download</button>
+
+        <button onclick="printTickets()">Print</button>
+
+    </div>
+
+    <div class="dashboard">
+
+        <div class="tickets">
+
+            <div class="ticket-list ticket-table-wrap" id="ticketList">
+                <div class="empty">Loading tickets...</div>
+            </div>
+
+        </div>
+
+        <div class="conversation" id="conversationPanel" tabindex="-1" aria-live="polite">
+
+            <div id="conversationContent">
+
+                <div class="empty">
+                    Select a support ticket to view the conversation.
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+
+/*
+====================================================
+CHANGE THIS TO YOUR RENDER BACKEND URL
+====================================================
+*/
+
+const API_BASE = "https://ecommerce-1-r5m4.onrender.com";
+const API = API_BASE;
+
+
+let tickets = [];
+let selectedTicket = null;
+let activeTicketStatus = "all";
+let activeTicketCategory = "";
+
+const ticketStatusLabels = {
+    all: "Total Tickets",
+    open: "Open Tickets",
+    in_progress: "In Progress Tickets",
+    resolved: "Resolved Tickets"
+};
+
+const ticketCategories = [
+    { value: "order", label: "Order Issues" },
+    { value: "delivery", label: "Delivery Issues" },
+    { value: "return", label: "Returns & Refunds" },
+    { value: "product", label: "Product Issues" },
+    { value: "coupon", label: "Coupon/Offers" },
+];
+
+
+/* ADMIN TOKEN */
+
+function getToken() {
+
+    return (
+        localStorage.getItem("sriram-admin-token") ||
+        localStorage.getItem("adminToken") ||
+        localStorage.getItem("admin_token") ||
+        sessionStorage.getItem("adminToken")
+    );
+
+}
+
+
+/* apiRequest(...) REQUEST */
+
+async function apiRequest(url, options = {}) {
+
+    const token = getToken();
+
+    const headers = {
+        "Content-Type": "application/json",
+        ...(options.headers || {})
+    };
+
+    if (token) {
+        headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(API_BASE + url, {
+        ...options,
+        headers
+    });
+
+    if (response.status === 401) {
+        alert("Admin session expired. Please login again.");
+        logout();
+        return null;
+    }
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+        throw new Error(data.error || "Request failed");
+    }
+
+    return data;
+}
+
+
+/* LOAD TICKETS */
+
+async function loadTickets() {
+
+    try {
+
+        const url = `/admin/support`;
+
+        const data = await apiRequest(url);
+
+        if (!data) return;
+
+        tickets = Array.isArray(data) ? data : [];
+        activeTicketStatus =
+            document.getElementById("statusFilter").value || "all";
+        updateStats();
+        renderTickets();
+
+    } catch (error) {
+
+        console.error(error);
+
+        document.getElementById("ticketList").innerHTML =
+            `<div class="empty">
+                Could not load support tickets.<br>
+                ${error.message}
+            </div>`;
+    }
+}
+
+
+/* STATISTICS */
+
+function updateStats() {
+
+    document.getElementById("totalTickets").textContent =
+        tickets.length;
+
+    document.getElementById("openTickets").textContent =
+        tickets.filter(t => t.status === "open").length;
+
+    document.getElementById("progressTickets").textContent =
+        tickets.filter(t => t.status === "in_progress").length;
+
+    document.getElementById("resolvedTickets").textContent =
+        tickets.filter(t => t.status === "resolved").length;
+
+    renderCategoryFilter();
+    renderCategoryPieChart();
+    renderCategoryStatusChart();
+}
+
+let categoryPieChart = null;
+
+function renderCategoryPieChart() {
+    const breakdown = getTicketBreakdown();
+    const labels = breakdown.map(c => c.label);
+    const data = breakdown.map(c => c.count);
+    const total = data.reduce((a, b) => a + b, 0);
+
+    const colors = [
+        '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'
+    ];
+
+    const ctx = document.getElementById('categoryPieChart');
+    if (!ctx) return;
+
+    if (categoryPieChart) {
+        categoryPieChart.destroy();
+    }
+
+    categoryPieChart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: colors.slice(0, labels.length),
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const value = context.raw;
+                            const percent = total ? ((value / total) * 100).toFixed(1) : 0;
+                            return `${context.label}: ${value} (${percent}%)`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+// Custom legend with percentages
+    const legendContainer = document.getElementById('pieChartLegend');
+    if (legendContainer) {
+        legendContainer.innerHTML = labels.map((label, i) => {
+            const count = data[i];
+            const percent = total ? ((count / total) * 100).toFixed(1) : 0;
+            const color = colors[i % colors.length];
+            return `<span style="display: flex; align-items: center; gap: 6px; color: #374151;">
+                <span style="width: 12px; height: 12px; border-radius: 3px; background: ${color};"></span>
+                ${escapeHtml(label)}: <strong>${count}</strong> (${percent}%)
+            </span>`;
+        }).join('');
+    }
+}
+
+let categoryStatusChart = null;
+
+function renderCategoryStatusChart() {
+    const breakdownTickets = getTicketsForBreakdown();
+    
+    // Get status breakdown per category
+    const statuses = ['open', 'in_progress', 'resolved', 'closed'];
+    const statusLabels = { open: 'Open', in_progress: 'In Progress', resolved: 'Resolved', closed: 'Closed' };
+    const statusColors = { open: '#ef4444', in_progress: '#f59e0b', resolved: '#10b981', closed: '#6b7280' };
+    
+    const categoryData = ticketCategories.map(cat => {
+        const category = cat.value;
+        const counts = {};
+        statuses.forEach(s => counts[s] = 0);
+        
+        breakdownTickets.forEach(ticket => {
+            const ticketCat = normalizeTicketCategory(ticket.category);
+            if (ticketCat === category && counts[ticket.status] !== undefined) {
+                counts[ticket.status] += 1;
+            }
+        });
+        return { label: cat.label, counts };
+    }).filter(c => Object.values(c.counts).some(v => v > 0));
+    
+    if (categoryData.length === 0) {
+        const ctx = document.getElementById('categoryStatusChart');
+        if (ctx && categoryStatusChart) {
+            categoryStatusChart.destroy();
+            categoryStatusChart = null;
+        }
+        return;
+    }
+    
+    const labels = categoryData.map(c => c.label);
+    const datasets = statuses.map(status => ({
+        label: statusLabels[status],
+        data: categoryData.map(c => c.counts[status]),
+        backgroundColor: statusColors[status],
+        borderRadius: 4
+    }));
+    
+    const ctx = document.getElementById('categoryStatusChart');
+    if (!ctx) return;
+    
+    if (categoryStatusChart) {
+        categoryStatusChart.destroy();
+    }
+    
+    categoryStatusChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.raw}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { stacked: true },
+                y: { 
+                    stacked: true, 
+                    beginAtZero: true,
+                    ticks: { stepSize: 1 }
+                }
+            }
+        }
+    });
+    
+    // Custom legend
+    const legendContainer = document.getElementById('categoryStatusLegend');
+    if (legendContainer) {
+        legendContainer.innerHTML = statuses.map(status => {
+            const total = categoryData.reduce((sum, c) => sum + c.counts[status], 0);
+            if (total === 0) return '';
+            return `<span style="display: flex; align-items: center; gap: 6px; color: #374151;">
+                <span style="width: 12px; height: 12px; border-radius: 3px; background: ${statusColors[status]};"></span>
+                ${statusLabels[status]}: <strong>${total}</strong>
+            </span>`;
+        }).join('');
+    }
+}
+
+function getTicketsForBreakdown() {
+
+    if (activeTicketStatus === "all") {
+        return tickets;
+    }
+
+    return tickets.filter(ticket => ticket.status === activeTicketStatus);
+}
+
+
+function normalizeTicketCategory(category) {
+
+    const value = String(category || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    if ([
+        "order",
+        "order issue",
+        "order issues"
+    ].includes(value)) {
+        return "order";
+    }
+
+    if ([
+        "delivery",
+        "delivery issue",
+        "delivery issues"
+    ].includes(value)) {
+        return "delivery";
+    }
+
+    if ([
+        "return",
+        "returns",
+        "refund",
+        "refunds",
+        "return refund",
+        "returns refund",
+        "return refunds",
+        "returns refunds"
+    ].includes(value)) {
+        return "return";
+    }
+
+    if ([
+        "product",
+        "product issue",
+        "product issues",
+        "product quality"
+    ].includes(value)) {
+        return "product";
+    }
+
+    if ([
+        "coupon",
+        "coupons",
+        "offer",
+        "offers",
+        "coupon offer",
+        "coupon offers",
+        "coupons offers"
+    ].includes(value)) {
+        return "coupon";
+    }
+
+    return "";
+}
+
+
+function getTicketBreakdown() {
+
+    const breakdownTickets = getTicketsForBreakdown();
+    const counts = Object.fromEntries(
+        ticketCategories.map(category => [category.value, 0])
+    );
+
+    breakdownTickets.forEach(ticket => {
+        const category = normalizeTicketCategory(ticket.category);
+
+        if (counts[category] !== undefined) {
+            counts[category] += 1;
+        }
+    });
+
+    return ticketCategories.map(category => ({
+        ...category,
+        count: counts[category.value]
+    }));
+}
+
+
+function renderCategoryFilter() {
+
+    const breakdown = getTicketBreakdown();
+    const breakdownTickets = getTicketsForBreakdown();
+    const total = breakdownTickets.length;
+    const list = document.getElementById("categoryFilter");
+    if (!list) return;
+
+    list.innerHTML = breakdown.map(category => {
+        const width = total
+            ? Math.round((category.count / total) * 100)
+            : 0;
+        const activeClass =
+            activeTicketCategory === category.value ? "active" : "";
+
+        return `
+            <button
+                class="ticket-breakdown-row ${activeClass}"
+                type="button"
+                onclick="filterByCategory('${category.value}')"
+                ${category.count ? "" : "disabled"}
+            >
+                <span class="ticket-breakdown-label">
+                    ${escapeHtml(category.label)}
+                </span>
+                <strong class="ticket-breakdown-count">
+                    ${category.count}
+                </strong>
+                <div class="ticket-breakdown-bar" aria-hidden="true">
+                    <span style="width: ${width}%"></span>
+                </div>
+            </button>
+        `;
+    }).join("");
+}
+
+
+function filterByCategory(category) {
+    activeTicketCategory = category || "";
+    renderTickets();
+    renderCategoryFilter();
+}
+
+
+function filterByStatus(status) {
+    const statusFilter = document.getElementById("statusFilter");
+    if (!statusFilter) return;
+
+    statusFilter.value = status || "";
+    activeTicketStatus = status || "all";
+    activeTicketCategory = "";
+    renderTickets();
+    renderCategoryFilter();
+}
+
+
+/* RENDER */
+
+function renderTickets() {
+
+    const list = document.getElementById("ticketList");
+
+    const search =
+        document.getElementById("search").value
+            .toLowerCase()
+            .trim();
+
+    const status =
+        document.getElementById("statusFilter").value;
+
+    const filtered = tickets.filter(ticket => {
+        const matchesStatus = !status || ticket.status === status;
+        const matchesCategory = !activeTicketCategory ||
+            normalizeTicketCategory(ticket.category) === activeTicketCategory;
+        const matchesSearch =
+            String(ticket.id).includes(search) ||
+            String(ticket.name || "").toLowerCase().includes(search) ||
+            String(ticket.email || "").toLowerCase().includes(search) ||
+            String(ticket.message || "").toLowerCase().includes(search);
+
+        return matchesStatus && matchesCategory && matchesSearch;
+    });
+
+    if (!filtered.length) {
+        list.innerHTML =
+            `<div class="empty">
+                No support tickets found.
+            </div>`;
+        return;
+    }
+
+    list.innerHTML = `
+        <table class="ticket-table">
+            <thead>
+                <tr>
+                    <th>Ticket ID</th>
+                    <th>Customer</th>
+                    <th>Order</th>
+                    <th>Category</th>
+                    <th>Message</th>
+                    <th>Status</th>
+                    <th>Created At</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${filtered.map(ticket => {
+        const active =
+            selectedTicket &&
+            Number(selectedTicket.id) === Number(ticket.id)
+                ? "active"
+                : "";
+
+        return `
+            <tr
+                class="ticket ${active}"
+                tabindex="0"
+                role="button"
+                aria-label="Open ticket #${ticket.id} conversation"
+                onclick="openTicket(${ticket.id})"
+                onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openTicket(${ticket.id}); }"
+            >
+                <td class="ticket-id">#${ticket.id}</td>
+                <td class="ticket-customer">
+                    <strong>${escapeHtml(ticket.name)}</strong>
+                    <span>${escapeHtml(ticket.email)}</span>
+                </td>
+                <td class="ticket-order">${ticket.order_id ? `#${escapeHtml(ticket.order_id)}` : "-"}</td>
+                <td>${escapeHtml(ticket.category || "-")}</td>
+                <td class="ticket-message" title="${escapeHtml(ticket.message)}">${escapeHtml(ticket.message)}</td>
+                <td><span class="badge ${escapeHtml(ticket.status)}">${formatStatus(ticket.status)}</span></td>
+                <td class="ticket-date">${formatDate(ticket.created_at)}</td>
+            </tr>
+        `;
+                }).join("")}
+            </tbody>
+        </table>
+    `;
+}
+
+/* SEARCH */
+
+function filterTickets() {
+    renderTickets();
+}
+
+function getVisibleTickets() {
+    const search = document.getElementById("search").value.toLowerCase().trim();
+    const status = document.getElementById("statusFilter").value;
+
+    return tickets.filter(ticket => {
+        const matchesStatus = !status || ticket.status === status;
+        const matchesCategory = !activeTicketCategory ||
+            normalizeTicketCategory(ticket.category) === activeTicketCategory;
+        const matchesSearch =
+            String(ticket.id).includes(search) ||
+            String(ticket.name || "").toLowerCase().includes(search) ||
+            String(ticket.email || "").toLowerCase().includes(search) ||
+            String(ticket.message || "").toLowerCase().includes(search);
+
+        return matchesStatus && matchesCategory && matchesSearch;
+    });
+}
+
+function downloadFile(content, filename, type) {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
+function getTicketExportRows() {
+    return getVisibleTickets().map(ticket => [
+        ticket.id,
+        ticket.name || "",
+        ticket.email || "",
+        ticket.order_id || "",
+        ticket.category || "",
+        formatStatus(ticket.status),
+        formatDate(ticket.created_at),
+        ticket.message || ""
+    ]);
+}
+
+function downloadTicketsCsv(rows) {
+    const headers = ["Ticket ID", "Customer", "Email", "Order ID", "Category", "Status", "Created At", "Message"];
+    const csv = [headers, ...rows].map(row => row.map(value => {
+        const escaped = String(value ?? "").replace(/"/g, '""');
+        return /[",\n]/.test(escaped) ? `"${escaped}"` : escaped;
+    }).join(",")).join("\n");
+
+    downloadFile("\ufeff" + csv, `support-tickets-${new Date().toISOString().slice(0, 10)}.csv`, "text/csv;charset=utf-8");
+}
+
+function downloadTicketsPdf(rows) {
+    const jsPDF = window.jspdf?.jsPDF;
+    if (typeof jsPDF !== "function") {
+        alert("PDF export is unavailable. Please check your connection and try again.");
+        return;
+    }
+
+    const pdfDocument = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    if (typeof pdfDocument.autoTable !== "function") {
+        alert("PDF table export is unavailable. Please check your connection and try again.");
+        return;
+    }
+
+    pdfDocument.setFontSize(15);
+    pdfDocument.text("Customer Support Tickets", 14, 12);
+    pdfDocument.setFontSize(9);
+    pdfDocument.text(`Generated: ${new Date().toLocaleString()}`, 14, 19);
+    pdfDocument.autoTable({
+        startY: 24,
+        head: [["Ticket ID", "Customer", "Email", "Order ID", "Category", "Status", "Created At", "Message"]],
+        body: rows.map(row => row.map(value => String(value ?? ""))),
+        theme: "grid",
+        styles: {
+            font: "helvetica",
+            fontSize: 7,
+            cellPadding: 1.2,
+            overflow: "linebreak"
+        },
+        headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: "bold"
+        },
+        alternateRowStyles: {
+            fillColor: [248, 250, 252]
+        },
+        columnStyles: {
+            0: { cellWidth: 18 },
+            1: { cellWidth: 32 },
+            2: { cellWidth: 38 },
+            3: { cellWidth: 22 },
+            4: { cellWidth: 28 },
+            5: { cellWidth: 25 },
+            6: { cellWidth: 35 },
+            7: { cellWidth: 70 }
+        }
+    });
+    pdfDocument.save(`support-tickets-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+function downloadTickets() {
+    const rows = getTicketExportRows();
+    if (!rows.length) {
+        alert("No tickets to download.");
+        return;
+    }
+
+    const format = document.getElementById("downloadFormat").value;
+    if (format === "pdf") {
+        downloadTicketsPdf(rows);
+    } else {
+        downloadTicketsCsv(rows);
+    }
+}
+
+function printTickets() {
+    const rows = getTicketExportRows();
+    if (!rows.length) {
+        alert("No tickets to print.");
+        return;
+    }
+
+    const jsPDF = window.jspdf?.jsPDF;
+    if (typeof jsPDF !== "function") {
+        alert("Print (PDF) is unavailable. Please check your connection and try again.");
+        return;
+    }
+
+    const pdfDocument = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    if (typeof pdfDocument.autoTable !== "function") {
+        alert("Print (PDF table) is unavailable. Please check your connection and try again.");
+        return;
+    }
+
+    pdfDocument.setFontSize(15);
+    pdfDocument.text("Customer Support Tickets", 14, 12);
+    pdfDocument.setFontSize(9);
+    pdfDocument.text(`Generated: ${new Date().toLocaleString()}`, 14, 19);
+    pdfDocument.autoTable({
+        startY: 24,
+        head: [["Ticket ID", "Customer", "Email", "Order ID", "Category", "Status", "Created At", "Message"]],
+        body: rows.map(row => row.map(value => String(value ?? ""))),
+        theme: "grid",
+        styles: {
+            font: "helvetica",
+            fontSize: 7,
+            cellPadding: 1.2,
+            overflow: "linebreak"
+        },
+        headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: "bold"
+        },
+        alternateRowStyles: {
+            fillColor: [248, 250, 252]
+        },
+        columnStyles: {
+            0: { cellWidth: 18 },
+            1: { cellWidth: 32 },
+            2: { cellWidth: 38 },
+            3: { cellWidth: 22 },
+            4: { cellWidth: 28 },
+            5: { cellWidth: 25 },
+            6: { cellWidth: 35 },
+            7: { cellWidth: 70 }
+        }
+    });
+    pdfDocument.autoPrint();
+    pdfDocument.output("dataurlnewwindow");
+}
+
+/* OPEN TICKET */
+
+async function openTicket(id) {
+
+    try {
+
+        const ticket = await apiRequest(`/admin/support/${id}`);
+
+        if (!ticket) return;
+
+        selectedTicket = ticket;
+
+        renderTickets();
+
+        const replies =
+            await apiRequest(`/admin/support/${id}/replies`);
+
+        renderConversation(ticket, replies || []);
+
+        const conversationPanel = document.getElementById("conversationPanel");
+        if (conversationPanel) {
+            conversationPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+            conversationPanel.focus({ preventScroll: true });
+        }
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert(error.message);
+    }
+}
+
+
+/* CONVERSATION */
+
+function renderConversation(ticket, replies) {
+
+    const content =
+        document.getElementById("conversationContent");
+
+    let messages = [];
+
+    messages.push({
+        message: ticket.message,
+        is_customer_reply: true,
+        created_at: ticket.created_at
+    });
+
+    messages = messages.concat(replies);
+
+    content.innerHTML = `
+
+        <div class="conversation-header">
+
+            <h2>
+                Ticket #${ticket.id}
+            </h2>
+
+            <div class="customer-info">
+                <strong>${escapeHtml(ticket.name)}</strong>
+                · ${escapeHtml(ticket.email)}
+                ${ticket.order_id
+                    ? ` · Order #${escapeHtml(ticket.order_id)}`
+                    : ""}
+                · ${escapeHtml(ticket.category)}
+            </div>
+
+            </div>
+
+        <div class="messages">
+
+            ${messages.map(message => `
+
+                <div class="message ${
+                    message.is_customer_reply
+                        ? "customer"
+                        : "admin"
+                }">
+
+                    <div class="message-label">
+                        ${
+                            message.is_customer_reply
+                                ? "CUSTOMER"
+                                : "SUPPORT TEAM"
+                        }
+                    </div>
+
+                    <div>
+                        ${escapeHtml(message.message)}
+                    </div>
+
+                    <div class="message-time">
+                        ${formatDate(message.created_at)}
+                    </div>
+
+                </div>
+
+            `).join("")}
+
+        </div>
+
+        <div class="reply-box">
+
+            <textarea
+                id="replyMessage"
+                placeholder="Write your reply to the customer..."
+            ></textarea>
+
+            <div class="reply-actions">
+
+                <select id="newStatus">
+
+                    <option value="open"
+                        ${ticket.status === "open" ? "selected" : ""}>
+                        Open
+                    </option>
+
+                    <option value="in_progress"
+                        ${ticket.status === "in_progress" ? "selected" : ""}>
+                        In Progress
+                    </option>
+
+                    <option value="resolved"
+                        ${ticket.status === "resolved" ? "selected" : ""}>
+                        Resolved
+                    </option>
+
+                    <option value="closed"
+                        ${ticket.status === "closed" ? "selected" : ""}>
+                        Closed
+                    </option>
+
+                </select>
+
+                <button onclick="updateStatus()">
+                    Update Status
+                </button>
+
+                <button onclick="sendReply()">
+                    Send Reply
+                </button>
+
+            </div>
+
+        </div>
+    `;
+}
+
+
+/* SEND REPLY */
+
+async function sendReply() {
+
+    if (!selectedTicket) return;
+
+    const textarea =
+        document.getElementById("replyMessage");
+
+    const message =
+        textarea.value.trim();
+
+    if (!message) {
+
+        alert("Please enter a reply.");
+
+        return;
+    }
+
+    try {
+
+        await apiRequest(
+            `/admin/support/${selectedTicket.id}/replies`,
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    message
+                })
+            }
+        );
+
+        textarea.value = "";
+
+        await openTicket(selectedTicket.id);
+
+        alert("Reply sent successfully.");
+
+    } catch (error) {
+
+        alert(error.message);
+    }
+}
+
+
+/* UPDATE STATUS */
+
+async function updateStatus() {
+
+    if (!selectedTicket) return;
+
+    const status =
+        document.getElementById("newStatus").value;
+
+    try {
+
+        await apiRequest(
+            `/admin/support/${selectedTicket.id}`,
+            {
+                method: "PATCH",
+                body: JSON.stringify({
+                    status
+                })
+            }
+        );
+
+        selectedTicket.status = status;
+
+        await loadTickets();
+
+        await openTicket(selectedTicket.id);
+
+    } catch (error) {
+
+        alert(error.message);
+    }
+}
+
+
+/* LOGOUT */
+
+function logout() {
+
+    localStorage.removeItem("sriram-admin-token");
+    localStorage.removeItem("adminToken");
+    localStorage.removeItem("admin_token");
+    sessionStorage.removeItem("adminToken");
+
+    window.location.href = "admin-login.html";
+}
+
+
+/* HELPERS */
+
+function formatStatus(status) {
+
+    return String(status)
+        .replace("_", " ")
+        .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+
+function formatDate(date) {
+
+    if (!date) return "";
+
+    return new Date(date).toLocaleString();
+}
+
+
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&")
+        .replace(/</g, "<")
+        .replace(/>/g, ">")
+        .replace(/"/g, "")
+        .replace(/'/g, "&#039;")
+};
+
+
+/* BROADCAST NOTIFICATION */
+
+function openBroadcastModal() {
+    document.getElementById("broadcast-modal-overlay").classList.add("open");
+    document.getElementById("broadcast-message").focus();
+}
+
+function closeBroadcastModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById("broadcast-modal-overlay").classList.remove("open");
+    document.getElementById("broadcast-message").value = "";
+}
+
+async function sendBroadcastNotification() {
+    const message = document.getElementById("broadcast-message").value.trim();
+    if (!message) {
+        alert("Please enter a message");
+        return;
+    }
+    const btn = document.querySelector(".send-btn");
+    btn.disabled = true;
+    btn.textContent = "Sending...";
+    try {
+        await apiRequest("/admin/notifications/broadcast", {
+            method: "POST",
+            body: JSON.stringify({ message })
+        });
+        closeBroadcastModal();
+        alert("Notification sent to all users!");
+    } catch (error) {
+        alert(error.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "Send to All Users";
+    }
+}
+
+
+/* START */
+
+if (!getToken()) {
+    window.location.href = "admin-login.html?redirect=" + encodeURIComponent("admin-support.html");
+} else {
+    loadTickets();
+}
+
+</script>
+
+</body>
+</html>

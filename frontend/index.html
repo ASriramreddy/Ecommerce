@@ -1,0 +1,815 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Shop fresh fruits and vegetables from Sriram Store."
+    />
+    <title>Sriram Store | Good shoes for good journeys</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  </head>
+
+  
+  <body>
+    <header class="store-header">
+<nav aria-label="Store navigation">
+        <a class="nav-link active" href="#shop">Home</a
+        ><a class="nav-link" href="#products">Categories</a
+        ><a class="nav-link" href="#offers">Offers</a
+        ><a class="nav-link" href="#orders">My orders</a
+        ><a class="nav-link" href="#referral-section">Referrals</a
+        >        <a class="nav-link" href="#spin-win">Spin & Win</a>
+        <a class="nav-link" href="support.html">Support</a>
+      </nav>
+      <div class="header-search">
+        <span aria-hidden="true">&#128269;</span
+        ><input
+          id="search-input"
+          type="search"
+          placeholder="Search fresh itemso..."
+          aria-label="Search fresh items"
+        />
+      </div>
+      <div class="header-actions">
+        <a class="help-button" href="support.html" aria-label="Open customer support">
+          Help
+        </a>
+        <button class="cart-button" id="notification-button" type="button" aria-label="Notifications" hidden>
+          <span class="bell-wrap">&#128276;</span><span class="bell-badge" id="notification-count">0</span>
+        </button>
+        <button class="cart-button" id="account-button" type="button">
+          Account
+        </button>
+        <button class="cart-button" id="logout-button" type="button" hidden>
+          Logout
+        </button>
+        <button
+          class="cart-button"
+          id="cart-button"
+          type="button"
+          aria-label="Open cart"
+        >
+          <span class="cart-icon-wrap">
+            <span class="cart-icon">&#128722;</span>
+            <span id="cart-count" class="cart-badge">0</span>
+          </span>
+        </button>
+      </div>
+      <div class="notification-dropdown" id="notification-dropdown">
+        <div class="notification-heading">
+          <p class="eyebrow">Alerts</p>
+          <button class="notification-clear" type="button" id="notification-clear">Clear all</button>
+        </div>
+        <div class="notification-list" id="notification-list"></div>
+      </div>
+</header>
+  <button class="spin-fab" id="spin-fab" type="button" aria-label="Spin & Win daily reward">&#127922;</button>
+  <section class="delivery-checker" id="delivery-checker" aria-label="Check delivery availability">
+      <div class="delivery-checker-inner">
+        <div class="delivery-checker-grid">
+          <div class="delivery-checker-info">
+            <p class="eyebrow">Delivery Availability</p>
+            <h2>Check if we deliver to your area</h2>
+            <p class="delivery-checker-subtitle">Enter your pincode to see delivery options</p>
+          </div>
+          <div class="delivery-checker-input">
+            <label for="home-pincode" class="visually-hidden">Pincode</label>
+            <div class="delivery-input-wrap">
+              <span class="delivery-input-icon">&#128205;</span>
+              <input
+                id="home-pincode"
+                type="text"
+                placeholder="Enter 6-digit pincode"
+                maxlength="6"
+                pattern="[0-9]{6}"
+                inputmode="numeric"
+                autocomplete="postal-code"
+              />
+            </div>
+            <button class="secondary-button" id="edit-delivery-pincode" type="button" hidden>
+              Edit
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <main class="store-main" id="shop">
+      <section class="collection" id="products">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Sriram groceries</p>
+            <h2>Fresh picks for you</h2>
+          </div>
+          <div class="product-actions">
+            <span class="product-count">03 items</span>
+            <select class="sort-select" id="sort-select">
+              <option value="">Sort: Featured</option>
+              <option value="price-asc">Price: Low to High</option>
+              <option value="price-desc">Price: High to Low</option>
+            </select>
+            <button class="view-toggle" id="view-toggle" type="button" aria-label="Toggle view" title="Toggle grid/list view">Γè₧</button>
+          </div>
+        </div>
+        <div class="category-filter" id="category-filter"></div>
+        <div class="product-grid" id="product-grid"></div>
+      </section>
+      <section class="wishlist-section" id="wishlist">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Saved for later</p>
+            <h2>Your wishlist</h2>
+          </div>
+          <span class="wishlist-count" id="wishlist-count">0</span>
+        </div>
+        <div class="wishlist-list" id="wishlist-list"><p class="empty-orders">Save products here for your next order.</p></div>
+      </section>
+      <section class="orders-section" id="orders">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Order history</p>
+            <h2>Your orders</h2>
+          </div>
+        </div>
+        <div class="orders-list" id="orders-list">
+          <p class="empty-orders">Your placed orders will appear here.</p>
+        </div>
+      </section>
+      <section class="referral-section" id="referral-section" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Refer & Earn</p>
+            <h2>Invite friends, earn rewards</h2>
+          </div>
+        </div>
+        <div class="referral-card" id="referral-card">
+          <div class="referral-header">
+            <div class="referral-code-display">
+              <span class="referral-label">Your referral code</span>
+              <div class="referral-code-wrap">
+                <strong id="referral-code">Loading...</strong>
+                <button class="secondary-button copy-btn" id="copy-referral-btn" type="button">Copy</button>
+              </div>
+            </div>
+            <div class="referral-stats">
+              <div class="stat"><span class="stat-value" id="stat-total-referrals">0</span><span class="stat-label">Total Referrals</span></div>
+              <div class="stat"><span class="stat-value" id="stat-successful">0</span><span class="stat-label">Successful</span></div>
+              <div class="stat"><span class="stat-value" id="stat-earnings">Γé╣0</span><span class="stat-label">Earned</span></div>
+            </div>
+          </div>
+          <div class="referral-benefits">
+            <div class="benefit">
+              <span class="benefit-icon">≡ƒÄü</span>
+              <div>
+                <strong>Your friend gets</strong>
+                <span>Γé╣50 off first order</span>
+              </div>
+            </div>
+            <div class="benefit">
+              <span class="benefit-icon">≡ƒÆ░</span>
+              <div>
+                <strong>You earn</strong>
+                <span>Γé╣100 per referral</span>
+              </div>
+            </div>
+          </div>
+          <div class="referral-share">
+            <button class="primary-button share-referral-btn" id="share-referral-btn" type="button">Share via WhatsApp</button>
+            <button class="secondary-button share-referral-btn" id="share-referral-link-btn" type="button">Copy Link</button>
+          </div>
+          <div class="referral-history" id="referral-history">
+            <h4>Your Referrals</h4>
+            <div class="referral-list" id="referral-list"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <aside
+      class="cart-drawer"
+      id="cart-drawer"
+      aria-label="Shopping cart"
+      aria-hidden="true"
+    >
+      <div class="drawer-heading">
+        <div>
+          <p class="eyebrow">Your selection</p>
+          <h2>Your bag</h2>
+        </div>
+        <button
+          class="close-button"
+          id="close-cart"
+          type="button"
+          aria-label="Close cart"
+        >
+          &times;
+        </button>
+      </div>
+      <div class="cart-items" id="cart-items"></div>
+      <div class="cart-footer">
+        <div class="cart-subtotal">
+          <span>Subtotal</span><strong id="cart-total">&#8377;0</strong>
+        </div>
+        <div class="cart-discount" id="cart-discount" hidden>
+          <div class="discount-row">
+            <span>Discount</span><strong id="cart-discount-value">-&#8377;0</strong>
+            <button class="secondary-button" id="remove-discount" type="button" hidden>
+              Remove
+            </button>
+          </div>
+          <div class="offer-note">10% off on orders over &#8377;500</div>
+        </div>
+        <div class="cart-coupon">
+          <label for="bag-coupon-code">Discount code</label>
+          <div class="coupon-control">
+            <input id="bag-coupon-code" type="text" placeholder="Enter offer code" autocomplete="off" />
+            <button class="secondary-button" id="bag-apply-coupon" type="button">Apply</button>
+          </div>
+          <small class="coupon-status" id="bag-coupon-status" role="status"></small>
+          <div class="available-coupons" id="bag-available-coupons"></div>
+        </div>
+        <div class="cart-delivery" id="cart-delivery" hidden>
+          <span>Delivery</span><strong id="cart-delivery-value">&#8377;0</strong>
+        </div>
+        <div class="cart-total-row" id="cart-total-row">
+          <span>Total</span><strong id="cart-grand-total">&#8377;0</strong>
+        </div>
+        <button class="primary-button" id="place-order" type="button">
+          Place order <span>&rarr;</span>
+        </button>
+      </div>
+    </aside>
+    <div class="drawer-backdrop" id="drawer-backdrop"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite">
+      <span class="toast-icon">&#10003;</span><span id="toast-message"></span>
+    </div>
+    <div class="success-modal" id="order-success-modal" aria-hidden="true">
+      <div class="success-overlay" data-close-order-success></div>
+      <article class="success-card" role="dialog" aria-modal="true" aria-labelledby="order-success-title">
+        <div class="success-icon" aria-hidden="true">
+          <svg viewBox="0 0 52 52" width="56" height="56"><circle cx="26" cy="26" r="24" fill="#2c5f2d"/><path fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M14 27 l8 8 l16-18"/></svg>
+        </div>
+        <h2 id="order-success-title">Order Confirmed!</h2>
+        <p class="success-subtitle">Thank you for shopping with Sriram Store.</p>
+        <div class="success-details">
+          <div class="success-row"><span>Order ID</span><strong id="order-success-id">ΓÇö</strong></div>
+          <div class="success-row"><span>Items</span><strong id="order-success-items">ΓÇö</strong></div>
+          <div class="success-row" id="order-success-coupon-row" hidden><span>Coupon</span><strong id="order-success-coupon">ΓÇö</strong></div>
+          <div class="success-row"><span>Subtotal</span><strong id="order-success-subtotal">ΓÇö</strong></div>
+          <div class="success-row" id="order-success-discount-row" hidden><span>Discount</span><strong id="order-success-discount">ΓÇö</strong></div>
+          <div class="success-row"><span>Delivery</span><strong id="order-success-delivery">ΓÇö</strong></div>
+          <div class="success-row"><span>Delivery days</span><strong id="order-success-delivery-days">ΓÇö</strong></div>
+          <div class="success-row success-row-total"><span>Total Paid</span><strong id="order-success-total">ΓÇö</strong></div>
+        </div>
+        <div class="success-email" id="order-success-email-box">
+          <span class="success-email-icon">&#9993;</span>
+          <span id="order-success-email-text">A confirmation email has been sent.</span>
+        </div>
+        <button type="button" class="success-cta" data-close-order-success>Continue Shopping</button>
+      </article>
+    </div>
+    <div class="details-modal" id="details-modal" aria-hidden="true">
+      <div class="details-overlay" data-close-details></div>
+      <article class="details-card">
+        <button
+          class="close-button"
+          data-close-details
+          type="button"
+          aria-label="Close product details"
+        >
+          &times;
+        </button>
+        <div class="details-image" id="details-image"></div>
+        <div class="details-content">
+          <p class="eyebrow" id="details-tag">Fresh today</p>
+          <h2 id="details-name">Tomato</h2>
+          <p class="details-description" id="details-description">
+            Farm fresh produce, carefully selected for your kitchen.
+          </p>
+          <div class="details-price" id="details-price">&#8377;20</div>
+          <p class="details-unit" id="details-unit">1 kg pack</p>
+          <div class="details-actions">
+            <div class="quantity-controls">
+              <button
+                id="details-decrease"
+                type="button"
+                aria-label="Decrease quantity"
+              >
+                &minus;</button
+              ><strong id="details-quantity">1</strong
+              ><button
+                id="details-increase"
+                type="button"
+                aria-label="Increase quantity"
+              >
+                +
+              </button>
+            </div>
+            <button class="secondary-button" id="details-buy" type="button">Buy now</button>
+            <button class="primary-button" id="details-add" type="button">
+              Add to bag <span>&rarr;</span>
+            </button>
+          </div>
+        </div>
+        <div class="details-reviews" id="details-reviews">
+          <div class="reviews-header">
+            <h3>Ratings & Reviews</h3>
+            <span class="reviews-average" id="reviews-average"></span>
+          </div>
+          <div class="reviews-list" id="reviews-list"></div>
+          <div class="review-form" id="review-form">
+            <h4>Write a review</h4>
+            <div class="star-rating-input" id="star-rating-input">
+              <button type="button" data-rating="1" aria-label="1 star">Γÿà</button>
+              <button type="button" data-rating="2" aria-label="2 stars">Γÿà</button>
+              <button type="button" data-rating="3" aria-label="3 stars">Γÿà</button>
+              <button type="button" data-rating="4" aria-label="4 stars">Γÿà</button>
+              <button type="button" data-rating="5" aria-label="5 stars">Γÿà</button>
+            </div>
+            <textarea id="review-comment" rows="3" placeholder="Share your experience with this product..."></textarea>
+            <button class="primary-button" id="submit-review" type="button">Submit Review</button>
+          </div>
+        </div>
+      </article>
+    </div>
+    <div class="checkout-modal" id="checkout-modal" aria-hidden="true">
+      <div class="checkout-overlay" data-close-checkout></div>
+      <section class="checkout-card" aria-labelledby="checkout-title">
+        <button
+          class="close-button"
+          data-close-checkout
+          type="button"
+          aria-label="Close checkout"
+        >
+          &times;
+        </button>
+        <div class="form-heading">
+          <p class="eyebrow">Almost there</p>
+          <h2 id="checkout-title">Delivery details</h2>
+          <p>Tell us where to bring your fresh order.</p>
+        </div>
+        <form id="checkout-form" novalidate>
+          <div class="checkout-field full address-selector-field">
+            <label for="address-selector">Saved addresses</label>
+            <div class="address-selector-wrap">
+              <select id="address-selector" aria-label="Select saved address">
+                <option value="">Select a saved address or add new</option>
+              </select>
+              <button type="button" class="secondary-button address-action-btn" id="add-new-address-btn">+ New</button>
+            </div>
+            <small class="address-hint" id="address-hint">Or enter a new address below</small>
+          </div>
+          <div class="checkout-grid">
+            <div class="checkout-field full discount-field">
+              <label for="coupon-code">Discount code</label>
+              <div class="coupon-control">
+                <input id="coupon-code" type="text" placeholder="Enter offer code" autocomplete="off" />
+                <button class="secondary-button" id="apply-coupon" type="button">Apply</button>
+              </div>
+              <small class="coupon-status" id="coupon-status" role="status"></small>
+              <div class="available-coupons" id="available-coupons"></div>
+            </div>
+            <div class="checkout-field full">
+              <label for="customer-name">Full name</label
+              ><input
+                id="customer-name"
+                type="text"
+                placeholder="Your full name"
+                autocomplete="name"
+                required
+              />
+            </div>
+            <div class="checkout-field">
+              <label for="customer-phone">Phone number</label
+              ><input
+                id="customer-phone"
+                type="tel"
+                placeholder="10-digit number"
+                pattern="[0-9]{10}"
+                autocomplete="tel"
+                required
+              />
+            </div>
+            <div class="checkout-field pincode-field">
+              <label for="customer-pin">PIN code</label
+              ><input
+                id="customer-pin"
+                type="text"
+                placeholder="6-digit PIN"
+                pattern="[0-9]{6}"
+                inputmode="numeric"
+                required
+              />
+              <div class="pincode-popup" id="pincode-popup" aria-hidden="true">
+                <div class="pincode-popup-content">
+                  <span class="pincode-popup-icon">≡ƒôì</span>
+                  <div class="pincode-popup-details">
+                    <strong id="pincode-area"></strong>
+                    <span id="pincode-district"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="checkout-field full">
+              <label for="customer-address">Delivery address</label
+              ><textarea
+                id="customer-address"
+                rows="3"
+                placeholder="House number, street, area"
+                autocomplete="street-address"
+                required
+              ></textarea>
+            </div>
+            <div class="checkout-field">
+              <label for="customer-city">City</label
+              ><input
+                id="customer-city"
+                type="text"
+                placeholder="Your city"
+                autocomplete="address-level2"
+                required
+              />
+            </div>
+            <div class="checkout-field">
+              <label for="customer-district">District</label
+              ><input
+                id="customer-district"
+                type="text"
+                placeholder="District"
+                autocomplete="address-level1"
+                required
+              />
+            </div>
+            <div class="checkout-field">
+              <label for="customer-state">State</label
+              ><input
+                id="customer-state"
+                type="text"
+                placeholder="State"
+                autocomplete="address-level1"
+                required
+              />
+            </div>
+            <div class="checkout-field">
+              <label for="customer-country">Country</label
+              ><input
+                id="customer-country"
+                type="text"
+                placeholder="Country"
+                value="India"
+                autocomplete="country"
+                required
+              />
+            </div>
+            <div class="pincode-status" id="pincode-status" role="status"></div>
+            <small class="delivery-charge-info" id="delivery-charge-info" role="status"></small>
+          </div>
+          <div class="checkout-summary" id="checkout-summary" hidden>
+            <div class="checkout-summary-row">
+              <span>Subtotal</span><strong id="checkout-subtotal">&#8377;0</strong>
+            </div>
+            <div class="checkout-summary-row checkout-discount-row" hidden>
+              <span>Discount</span><strong id="checkout-discount">-&#8377;0</strong>
+            </div>
+            <div class="checkout-summary-row">
+              <span>Delivery</span><strong id="checkout-delivery">&#8377;0</strong>
+            </div>
+            <div class="checkout-summary-row checkout-total-row">
+              <span>Total</span><strong id="checkout-grand-total">&#8377;0</strong>
+            </div>
+          </div>
+          <button class="primary-button" type="submit">
+            Confirm and place order <span>&rarr;</span>
+          </button>
+        </form>
+      </section>
+    </div>
+    <div class="checkout-modal" id="order-edit-modal" aria-hidden="true">
+      <div class="checkout-overlay" data-close-order-edit></div>
+      <section class="checkout-card" aria-labelledby="order-edit-title">
+        <button
+          class="close-button"
+          data-close-order-edit
+          type="button"
+          aria-label="Close order edit"
+        >
+          &times;
+        </button>
+        <div class="form-heading">
+          <p class="eyebrow">Order details</p>
+          <h2 id="order-edit-title">Edit delivery address</h2>
+          <p>Update where we should deliver this order.</p>
+        </div>
+        <form id="order-edit-form" novalidate>
+          <div class="checkout-grid">
+            <div class="checkout-field full">
+              <label for="edit-order-address">Delivery address</label
+              ><textarea
+                id="edit-order-address"
+                rows="3"
+                placeholder="House number, street, area"
+                autocomplete="street-address"
+                required
+              ></textarea>
+            </div>
+          </div>
+          <button class="primary-button" type="submit">
+            Save changes <span>&rarr;</span>
+          </button>
+        </form>
+       </section>
+     </div>
+     <div class="checkout-modal" id="order-details-modal" aria-hidden="true">
+       <div class="checkout-overlay" data-close-order-details></div>
+       <section class="checkout-card" aria-labelledby="order-details-title">
+         <button
+           class="close-button"
+           data-close-order-details
+           type="button"
+           aria-label="Close order details"
+         >
+           &times;
+         </button>
+         <div class="form-heading">
+           <p class="eyebrow">Order details</p>
+           <h2 id="order-details-title">Order details</h2>
+         </div>
+          <div class="order-details-content">
+            <div class="order-details-row"><span>Order ID</span><strong id="order-details-id"></strong></div>
+            <div class="order-details-row"><span>Status</span><strong id="order-details-status"></strong></div>
+            <div class="order-tracking" id="order-tracking" aria-label="Order tracking"></div>
+            <div class="order-rate-actions" id="order-rate-actions"></div>
+            <div class="order-details-row"><span>Items</span><strong id="order-details-items"></strong></div>
+            <div class="order-details-row"><span>Coupon</span><strong id="order-details-coupon">ΓÇö</strong></div>
+            <div class="order-details-row"><span>Discount</span><strong id="order-details-discount">ΓÇö</strong></div>
+            <div class="order-details-row"><span>Address</span><strong id="order-details-address"></strong></div>
+            <div class="order-details-row"><span>Delivery charge</span><strong id="order-details-delivery"></strong></div>
+            <div class="order-details-row"><span>Delivery days</span><strong id="order-details-delivery-days">ΓÇö</strong></div>
+            <div class="order-details-row order-details-total"><span>Total</span><strong id="order-details-total"></strong></div>
+          </div>
+<button class="secondary-button" id="request-return" type="button">
+            Request return <span>&rarr;</span>
+          </button>
+          <div class="order-details-actions">
+            <button class="secondary-button" id="download-invoice" type="button" title="Download invoice as PDF">
+              <span>⬇</span> Download Invoice
+            </button>
+            <button class="primary-button" id="print-invoice" type="button" title="Print invoice">
+              <span>🖨</span> Print Invoice
+            </button>
+          </div>
+        </section>
+     </div>
+     <div class="auth-modal" id="auth-modal" aria-hidden="true">
+      <div class="auth-overlay" data-close-auth></div>
+      <div class="auth-card">
+        <button
+          class="close-button"
+          data-close-auth
+          type="button"
+          aria-label="Close sign in"
+        >
+          &times;
+        </button>
+        <div class="form-heading">
+          <p class="eyebrow">Your account</p>
+          <h2 id="form-title">Welcome back</h2>
+          <p id="form-subtitle">Sign in to pick up where you left off.</p>
+        </div>
+        <div class="auth-tabs" role="tablist" aria-label="Account access">
+          <button
+            class="tab is-active"
+            id="login-tab"
+            type="button"
+            role="tab"
+            aria-selected="true"
+          >
+            Sign in</button
+          ><button
+            class="tab"
+            id="register-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+          >
+            Create account
+          </button>
+        </div>
+        <form class="auth-form is-visible" id="login-form" novalidate>
+          <label for="login-email">Email address</label>
+          <div class="input-wrap">
+            <span class="input-icon">&#9993;</span
+            ><input
+              id="login-email"
+              type="email"
+              placeholder="you@example.com"
+              required
+            />
+          </div>
+          <label for="login-password">Password</label>
+          <div class="input-wrap">
+            <span class="input-icon">&#128274;</span
+            ><input
+              id="login-password"
+              type="password"
+              placeholder="Enter your password"
+              minlength="6"
+              required
+            /><button class="password-toggle" type="button">Show</button>
+          </div>
+          <button class="primary-button" type="submit">
+            Sign in to Sriram Store <span>&rarr;</span>
+          </button>
+          <button type="button" class="forgot-link" id="forgot-password-link" style="display:block;margin:10px auto 0;background:none;border:0;color:#2563eb;font-size:12px;font-weight:600;cursor:pointer;text-decoration:underline;">Forgot password?</button>
+        </form>
+        <form class="auth-form" id="register-form" novalidate>
+          <label for="register-name">Full name</label>
+          <div class="input-wrap">
+            <span class="input-icon">&#9786;</span
+            ><input
+              id="register-name"
+              type="text"
+              placeholder="Your full name"
+              required
+            />
+          </div>
+          <label for="register-email">Email address</label>
+          <div class="input-wrap">
+            <span class="input-icon">&#9993;</span
+            ><input
+              id="register-email"
+              type="email"
+              placeholder="you@example.com"
+              required
+            />
+          </div>
+          <label for="register-password">Create a password</label>
+          <div class="input-wrap">
+            <span class="input-icon">&#128274;</span
+            ><input
+              id="register-password"
+              type="password"
+              placeholder="At least 6 characters"
+              minlength="6"
+              required
+            /><button class="password-toggle" type="button">Show</button>
+          </div>
+          <label class="check-label"
+            ><input type="checkbox" required /><span class="custom-check"></span
+            >I agree to the terms</label
+          ><button class="primary-button" type="submit">
+            Create my account <span>&rarr;</span>
+          </button>
+        </form>
+        <p class="auth-error" id="auth-error" role="alert" aria-live="polite"></p>
+        <p class="form-note">Secure checkout, every time.</p>
+      </div>
+    </div>
+    <div class="auth-modal" id="profile-modal" aria-hidden="true">
+      <div class="auth-overlay" data-close-profile></div>
+      <div class="auth-card">
+        <button
+          class="close-button"
+          data-close-profile
+          type="button"
+          aria-label="Close"
+        >
+          &times;
+        </button>
+        <div class="form-heading">
+          <p class="eyebrow">Your account</p>
+          <h2 id="profile-title">Welcome back</h2>
+          <p id="profile-subtitle">Sign in to your account.</p>
+        </div>
+        <div class="auth-tabs" role="tablist" aria-label="Account access">
+          <button
+            class="tab is-active"
+            id="profile-login-tab"
+            type="button"
+            role="tab"
+            aria-selected="true"
+          >
+            Sign in</button
+          ><button
+            class="tab"
+            id="profile-register-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+          >
+            Create account
+          </button>
+        </div>
+        <form class="auth-form is-visible" id="profile-login-form" novalidate>
+          <label for="profile-login-email">Email address</label>
+          <div class="input-wrap">
+            <span class="input-icon">&#9993;</span
+            ><input
+              id="profile-login-email"
+              type="email"
+              placeholder="you@example.com"
+              required
+            />
+          </div>
+          <label for="profile-login-password">Password</label>
+          <div class="input-wrap">
+            <span class="input-icon">&#128274;</span
+            ><input
+              id="profile-login-password"
+              type="password"
+              placeholder="Enter your password"
+              minlength="6"
+              required
+            /><button class="password-toggle" type="button">Show</button>
+          </div>
+          <button type="button" class="forgot-link" id="profile-forgot-password-link" style="display:block;margin:10px auto 0;background:none;border:0;color:#2563eb;font-size:12px;font-weight:600;cursor:pointer;text-decoration:underline;">Forgot password?</button>
+          <button class="primary-button" type="submit">
+            Sign in <span>&rarr;</span>
+          </button>
+        </form>
+        <form class="auth-form" id="profile-register-form" novalidate>
+          <label for="profile-register-name">Full name</label>
+          <div class="input-wrap">
+            <span class="input-icon">&#9786;</span
+            ><input
+              id="profile-register-name"
+              type="text"
+              placeholder="Your full name"
+              required
+            />
+          </div>
+          <label for="profile-register-email">Email address</label>
+          <div class="input-wrap">
+            <span class="input-icon">&#9993;</span
+            ><input
+              id="profile-register-email"
+              type="email"
+              placeholder="you@example.com"
+              required
+            />
+          </div>
+          <label for="profile-register-password">Create a password</label>
+          <div class="input-wrap">
+            <span class="input-icon">&#128274;</span
+            ><input
+              id="profile-register-password"
+              type="password"
+              placeholder="At least 6 characters"
+              minlength="6"
+              required
+            /><button class="password-toggle" type="button">Show</button>
+          </div>
+          <button class="primary-button" type="submit">
+            Create account <span>&rarr;</span>
+          </button>
+        </form>
+        <p class="auth-error" id="profile-error" role="alert" aria-live="polite"></p>
+      </div>
+    </div>
+    <div class="spin-modal" id="spin-modal" aria-hidden="true">
+      <div class="spin-modal-overlay" data-close-spin></div>
+      <article class="spin-result-card" role="dialog" aria-modal="true" aria-labelledby="spin-result-title">
+        <button class="close-button" data-close-spin type="button" aria-label="Close">&times;</button>
+        <div class="spin-result-icon" id="spin-result-icon">&#127942;</div>
+        <h2 id="spin-result-title">You Won!</h2>
+        <p class="spin-result-prize" id="spin-result-prize"></p>
+        <p class="spin-result-message" id="spin-result-message"></p>
+        <div class="spin-result-actions">
+          <button class="primary-button" id="spin-apply-btn" type="button">Apply Reward</button>
+          <button class="secondary-button" data-close-spin type="button">Close</button>
+        </div>
+      </article>
+    </div>
+    <div class="spin-wheel-modal" id="spin-wheel-modal" aria-hidden="true">
+      <div class="spin-wheel-modal-overlay" data-close-spin-wheel></div>
+      <article class="spin-wheel-card" role="dialog" aria-modal="true" aria-labelledby="spin-wheel-title">
+        <button class="close-button" data-close-spin-wheel type="button" aria-label="Close">&times;</button>
+        <div class="spin-wheel-header">
+          <p class="eyebrow">Daily Reward</p>
+          <h2 id="spin-wheel-title">Spin & Win</h2>
+          <p class="spin-subtitle">Spin the wheel every day to win coupons, points & exclusive rewards</p>
+        </div>
+        <div class="spin-wheel-wrapper">
+          <div class="spin-wheel-pointer"></div>
+          <canvas id="spin-wheel" width="280" height="280"></canvas>
+          <div class="spin-center" id="spin-center">&#127942;</div>
+        </div>
+        <button class="primary-button spin-button" id="spin-button" type="button">
+          <span>&#127922;</span> Spin the Wheel
+        </button>
+        <small class="spin-status" id="spin-status" role="status"></small>
+      </article>
+    </div>
+    <script src="script.js"></script>
+
+  </body>
+  
+</html>

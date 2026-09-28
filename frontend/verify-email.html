@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verify Email - Sriram Store</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="verify-email-container">
+    <div class="verify-email-card">
+      <div class="verify-icon" id="verifyIcon">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="16 12 22 18"></polyline>
+          <polyline points="8 12 12 16 16 8"></polyline>
+        </svg>
+      </div>
+      <h1 id="verifyTitle">Verifying your email...</h1>
+      <p id="verifyMessage">Please wait while we verify your email address.</p>
+      <div class="verify-actions" id="verifyActions" style="display: none;">
+        <a href="index.html" class="btn btn-primary">Go to Sign In</a>
+      </div>
+      <div class="verify-error" id="verifyError" style="display: none;">
+        <a href="index.html#register" class="btn btn-secondary">Register Again</a>
+        <a href="index.html#login" class="btn btn-primary">Sign In</a>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    (async function() {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token');
+      const title = document.getElementById('verifyTitle');
+      const message = document.getElementById('verifyMessage');
+      const icon = document.getElementById('verifyIcon');
+      const actions = document.getElementById('verifyActions');
+      const errorDiv = document.getElementById('verifyError');
+
+      if (!token) {
+        title.textContent = 'Invalid Link';
+        message.textContent = 'No verification token provided in the link.';
+        icon.innerHTML = '<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>';
+        icon.style.color = '#e74c3c';
+        errorDiv.style.display = 'flex';
+        return;
+      }
+
+      try {
+        const res = await fetch(`${window.API_URL || 'http://localhost:3001'}/auth/verify-email?token=${encodeURIComponent(token)}`);
+        const text = await res.text();
+
+        if (res.ok) {
+          title.textContent = 'Email Verified!';
+          message.textContent = 'Your email has been successfully verified. You can now sign in to your account.';
+          icon.innerHTML = '<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+          icon.style.color = '#2c5f2d';
+          actions.style.display = 'flex';
+        } else {
+          title.textContent = 'Verification Failed';
+          message.innerHTML = text || 'This verification link is invalid or has expired.';
+          icon.innerHTML = '<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>';
+          icon.style.color = '#e74c3c';
+          errorDiv.style.display = 'flex';
+        }
+      } catch (err) {
+        title.textContent = 'Error';
+        message.textContent = 'Could not connect to the server. Please try again later.';
+        icon.innerHTML = '<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>';
+        icon.style.color = '#e74c3c';
+        errorDiv.style.display = 'flex';
+      }
+    })();
+  </script>
+
+  <style>
+    .verify-email-container {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      background: var(--bg, #f5f5f5);
+    }
+    .verify-email-card {
+      background: var(--card-bg, #fff);
+      border-radius: 16px;
+      padding: 3rem 2rem;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+    }
+    .verify-icon {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 1.5rem;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--primary-light, #e8f5e9);
+      color: var(--primary, #2c5f2d);
+      transition: all 0.3s ease;
+    }
+    .verify-email-card h1 {
+      margin: 0 0 0.75rem;
+      font-size: 1.75rem;
+      color: var(--text, #1a1a1a);
+    }
+    .verify-email-card p {
+      margin: 0 0 2rem;
+      color: var(--muted, #666);
+      line-height: 1.6;
+    }
+    .verify-actions, .verify-error {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .verify-error {
+      margin-top: 1rem;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.875rem 1.5rem;
+      border-radius: 8px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: var(--primary, #2c5f2d);
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: var(--primary-dark, #1e4a1f);
+    }
+    .btn-secondary {
+      background: var(--bg, #f5f5f5);
+      color: var(--text, #1a1a1a);
+      border: 1px solid var(--border, #ddd);
+    }
+    .btn-secondary:hover {
+      background: var(--border, #ddd);
+    }
+  </style>
+</body>
+</html>

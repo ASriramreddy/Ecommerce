@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Customer support for Sriram Store. Get help with orders, delivery, returns, and more." />
+    <title>Sriram Store | Customer Support</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      .support-hero { display: flex; align-items: center; justify-content: space-between; min-height: 340px; margin: 0 0 60px; padding: 50px 70px; background: #e9f0e5; }
+      .support-hero h1 { font-size: clamp(38px, 4.5vw, 58px); max-width: 520px; }
+      .support-hero p { max-width: 420px; margin: 18px 0 24px; color: #667367; font-size: 14px; line-height: 1.6; }
+      .support-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 60px; }
+      .support-section { padding: 0; }
+      .faq-item { border-bottom: 1px solid var(--line); }
+      .faq-question { width: 100%; text-align: left; background: transparent; border: 0; padding: 18px 0; color: var(--green-dark); font-size: 14px; font-weight: 700; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+      .faq-question::after { content: "+"; font-size: 20px; color: var(--green); }
+      .faq-question.open::after { content: "−"; }
+      .faq-answer { display: none; padding: 0 0 18px; color: #515852; font-size: 13px; line-height: 1.65; }
+      .faq-answer.open { display: block; }
+      .support-form { display: grid; gap: 14px; }
+      .support-form label { display: block; margin-bottom: 6px; color: #515852; font-size: 12px; font-weight: 700; }
+      .support-form input, .support-form select, .support-form textarea { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 12px; color: var(--ink); background: #fff; font-size: 13px; outline: 0; }
+      .support-form input:focus, .support-form select:focus, .support-form textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(56, 91, 69, .1); }
+      .support-form textarea { resize: vertical; min-height: 120px; }
+      .support-contact { display: flex; justify-content: center; margin-top: 28px; }
+      .support-card {
+    width: 350px;
+    max-width: 90%;
+    margin: 0 auto;
+}
+      .contact-card { padding: 20px; border: 1px solid var(--line); background: #fff; border-radius: 10px; text-align: center; }
+      .contact-card .icon { font-size: 22px; margin-bottom: 8px; }
+      .contact-card h3 { margin: 0 0 4px; font-size: 12px; color: var(--green-dark); }
+      .contact-card p { margin: 0; color: #767b76; font-size: 11px; line-height: 1.45; }
+      .support-status { min-height: 18px; margin-top: 8px; font-size: 12px; }
+      .support-status.is-valid { color: var(--green); }
+      .support-status.is-invalid { color: #c15e52; }
+
+      @media (max-width: 760px) {
+        .support-hero { padding: 40px 20px; }
+        .support-grid { grid-template-columns: 1fr; gap: 30px; }
+        .contact-grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="store-header">
+      <nav aria-label="Store navigation">
+        <a class="nav-link" href="index.html">Home</a>
+        <a class="nav-link" href="index.html#products">Categories</a>
+        <a class="nav-link" href="index.html#offers">Offers</a>
+        <a class="nav-link" href="index.html#wishlist">Wishlist</a>
+        <a class="nav-link" href="index.html#orders">My orders</a>
+        <a class="nav-link active" href="support.html">Support</a>
+      </nav>
+    </header>
+    <main class="store-main">
+      <section class="support-hero">
+        <div>
+          <p class="eyebrow">We are here to help</p>
+          <h1>Customer Support</h1>
+          <p>Have a question about your order, delivery, or anything else? Reach out and we will get back to you as soon as possible.</p>
+<<<<<<< HEAD
+          <a class="hero-link" href="#contact-form"><span>&rarr;</span> Contact us</a>
+=======
+          <a class="hero-link" href="#contact-form"><span>→</span> Contact us</a>
+>>>>>>> features
+        </div>
+      </section>
+
+      <section class="support-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Common questions</p>
+            <h2>Frequently Asked Questions</h2>
+          </div>
+        </div>
+        <div class="faq-list" id="faq-list">
+          <div class="faq-item">
+            <button class="faq-question" type="button">How do I track my order?</button>
+            <div class="faq-answer">You can track your order from the "My orders" section on the home page. We also send updates via email and SMS.</div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-question" type="button">What is your delivery timeline?</button>
+            <div class="faq-answer">We typically deliver within 24-48 hours depending on your location. You will see the estimated delivery date at checkout.</div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-question" type="button">How can I cancel or return an order?</button>
+            <div class="faq-answer">You can request a cancellation or return from the order details page. Orders can be cancelled before they are shipped.</div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-question" type="button">Do you offer cash on delivery?</button>
+            <div class="faq-answer">Yes, cash on delivery is available for most locations. You can select this option at checkout.</div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-question" type="button">How do I apply a coupon code?</button>
+            <div class="faq-answer">Enter your coupon code in the checkout page under "Discount code" and click Apply. The discount will be reflected in your total.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="support-section" id="contact-form">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Get in touch</p>
+            <h2>Contact Support</h2>
+          </div>
+        </div>
+        <div class="support-grid">
+          <form class="support-form" id="support-form" novalidate>
+            <div>
+              <label for="support-order">Order ID <span style="color:var(--danger);">*</span></label>
+              <select id="support-order" required style="width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: #fff; font-size: 13px;">
+                <option value="">Loading your orders...</option>
+              </select>
+            </div>
+            <div>
+              <label for="support-name">Name <span style="color:var(--danger);">*</span></label>
+              <input id="support-name" type="text" placeholder="Your full name" required autocomplete="off" readonly style="background: #f5f5f5;" />
+            </div>
+            <div>
+              <label for="support-email">Email <span style="color:var(--danger);">*</span></label>
+              <input id="support-email" type="email" placeholder="you@example.com" required autocomplete="off" readonly style="background: #f5f5f5;" />
+            </div>
+            <div>
+              <label for="support-category">Category</label>
+              <select id="support-category" required>
+                <option value="">Select a category</option>
+                <option value="order">Order issue</option>
+                <option value="delivery">Delivery</option>
+                <option value="return">Return / Refund</option>
+                <option value="product">Product quality</option>
+                <option value="coupon">Coupon / Offer</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label for="support-message">Message</label>
+              <textarea id="support-message" placeholder="Describe your issue..." required></textarea>
+            </div>
+            <button class="primary-button" type="submit">Send message <span>→</span></button>
+            <div class="support-status" id="support-status" role="status"></div>
+          </form>
+          <div class="support-contact">
+            <div class="contact-grid">
+              <div class="contact-card">
+                <div class="icon">☎</div>
+                <h3>Phone</h3>
+                <p>+91 98765 43210<br />Mon-Sat, 9am-7pm</p>
+              </div>
+              <div class="contact-card">
+                <div class="icon">✉</div>
+                <h3>Email</h3>
+                <p>support@sriramstore.com<br />We reply within 24 hours</p>
+              </div>
+              <div class="contact-card">
+                <div class="icon">📍</div>
+                <h3>Address</h3>
+                <p>123 Market Street,<br /> Chennai, Tamil Nadu</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- My Tickets Section -->
+      <section class="support-section" id="my-tickets">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Your tickets</p>
+            <h2>My Support Tickets</h2>
+          </div>
+        </div>
+        <div class="toolbar" style="margin-bottom: 16px; display: flex; gap: 10px; flex-wrap: wrap;">
+          <input type="text" id="ticket-search" placeholder="Search tickets..." style="flex: 1; min-width: 200px; padding: 10px; border: 1px solid var(--line); border-radius: 6px;">
+          <select id="ticket-status-filter" onchange="renderTicketsTable()" style="padding: 10px; border: 1px solid var(--line); border-radius: 6px;">
+            <option value="">All Status</option>
+            <option value="open">Open</option>
+            <option value="in_progress">In Progress</option>
+            <option value="resolved">Resolved</option>
+            <option value="closed">Closed</option>
+          </select>
+        </div>
+        <div class="ticket-table-wrap" id="tickets-list" style="overflow-x: auto;">
+          <div style="padding: 40px 20px; text-align: center; color: #767b76;">Loading your tickets...</div>
+        </div>
+      </section>
+
+      <!-- Conversation Panel -->
+      <section class="conversation-panel" id="conversation-panel" style="display: none; margin-top: 24px; border: 1px solid var(--line); border-radius: 12px; background: #fff; overflow: hidden;">
+        <div class="conversation-header" style="padding: 18px 20px; border-bottom: 1px solid var(--line); background: #fafafa;">
+          <h3 id="conversation-ticket-title" style="margin: 0 0 6px; font-size: 16px; font-weight: 700;">Ticket</h3>
+          <div class="conversation-meta" id="conversation-meta" style="font-size: 12px; color: #6b7280;"></div>
+        </div>
+        <div class="conversation-messages" id="conversation-messages" style="flex: 1; padding: 20px; overflow-y: auto; max-height: 500px; display: flex; flex-direction: column; gap: 16px;">
+          <div class="conversation-empty" style="text-align: center; color: #767b76; padding: 40px 20px;">Select a ticket to view the conversation.</div>
+        </div>
+        <div class="conversation-reply" id="conversation-reply" style="display: none; padding: 16px 20px; border-top: 1px solid var(--line); background: #fafafa;">
+          <textarea id="reply-message" placeholder="Write your reply..." style="width: 100%; min-height: 80px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; font-size: 13px; font-family: inherit; resize: vertical; outline: 0;"></textarea>
+          <div class="conversation-reply-actions" style="display: flex; gap: 10px; margin-top: 10px; justify-content: flex-end;">
+            <button class="btn-secondary" type="button" id="reply-close" style="padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px; background: #fff; color: var(--ink); border: 1px solid var(--line);">Close</button>
+            <button class="btn-primary" type="button" id="reply-send" style="padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px; background: var(--green); color: #fff; border: 0;">Send Reply</button>
+          </div>
+        </div>
+      </section>
+    </main>
+    <div class="toast" id="toast" role="status" aria-live="polite">
+      <span class="toast-icon">✓</span><span id="toast-message"></span>
+    </div>
+    <script type="text/javascript">
+      const API_URL = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") 
+        ? "http://localhost:3000" 
+        : "https://ecommerce-1-r5m4.onrender.com";
+
+      document.querySelectorAll(".faq-question").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const answer = btn.nextElementSibling;
+          const isOpen = btn.classList.contains("open");
+          document.querySelectorAll(".faq-question").forEach((q) => { q.classList.remove("open"); q.nextElementSibling.classList.remove("open"); });
+          if (!isOpen) { btn.classList.add("open"); answer.classList.add("open"); }
+        });
+      });
+
+      function showToast(message, success = true) {
+        const toast = document.querySelector("#toast");
+        document.querySelector("#toast-message").textContent = message;
+        document.querySelector(".toast-icon").textContent = success ? "✓" : "✕";
+        toast.classList.add("show");
+        window.clearTimeout(showToast.timer);
+        showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 3000);
+      }
+
+      function escapeHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&")
+        .replace(/</g, "<")
+        .replace(/>/g, ">")
+        .replace(/"/g, "\"")
+        .replace(/'/g, "&#039;");
+}
+
+      function formatDate(date) {
+        if (!date) return "";
+        return new Date(date).toLocaleString();
+      }
+
+      document.querySelector("#support-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        if (!form.checkValidity()) return form.reportValidity();
+        const status = document.querySelector("#support-status");
+        status.textContent = "Sending...";
+        status.className = "support-status";
+        
+        const user = JSON.parse(localStorage.getItem("sriram-store-user") || "null");
+        // For testing: use fallback user ID if no logged in user (allugulasriram@gmail.com has userId 19 with orders)
+        const testUserId = user?.id || 19;
+        const testEmail = user?.email || "allugulasriram@gmail.com";
+        
+        const payload = {
+          userId: testUserId,
+          name: document.querySelector("#support-name").value.trim(),
+          email: document.querySelector("#support-email").value.trim() || testEmail,
+          orderId: document.querySelector("#support-order").value.trim(),
+          category: document.querySelector("#support-category").value,
+          message: document.querySelector("#support-message").value.trim()
+        };
+        try {
+          const response = await fetch(`${API_URL}/support`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          const data = await response.json().catch(() => ({}));
+          if (response.ok) {
+            status.textContent = "Your message has been sent. We will get back to you shortly.";
+            status.className = "support-status is-valid";
+            form.reset();
+            showToast("Support request submitted successfully");
+} else {
+            status.textContent = data.error || "Could not send your message. Please try again.";
+            status.className = "support-status is-invalid";
+          }
+        } catch (error) {
+          status.textContent = "Could not connect to support. Please try again later.";
+          status.className = "support-status is-invalid";
+        }
+      });
+      
+      document.addEventListener("DOMContentLoaded", () => {
+        const user = JSON.parse(localStorage.getItem("sriram-store-user") || "null");
+        // For testing: use fallback user ID if no logged in user (allugulasriram@gmail.com has userId 19 with orders)
+        const testUserId = user?.id || 19;
+        const testEmail = user?.email || "allugulasriram@gmail.com";
+        const testName = user?.name || "sriram";
+        
+        // Load user's order options for the dropdown
+        if (testUserId) {
+          loadUserOrderOptions(testUserId);
+        }
+        
+        // Load user's tickets
+        if (testEmail) {
+          loadUserTickets(testEmail);
+        }
+        
+        // Auto-fill name and email from user data
+        const nameInput = document.querySelector("#support-name");
+        const emailInput = document.querySelector("#support-email");
+        if (user) {
+          if (nameInput && user.name) nameInput.value = user.name;
+          if (emailInput && user.email) emailInput.value = user.email;
+        } else if (testName && testEmail) {
+          // For fallback testing
+          if (nameInput && !nameInput.value) nameInput.value = testName;
+          if (emailInput && !emailInput.value) emailInput.value = testEmail;
+        }
+      });
+
+      // Load user tickets
+      let allTickets = [];
+      let currentTicketId = null;
+      let conversationPollInterval = null;
+
+      async function loadUserTickets(email) {
+        const list = document.querySelector("#tickets-list");
+        
+        if (!email) {
+          list.innerHTML = '<div style="padding: 40px 20px; text-align: center; color: #767b76;">No email available to load tickets.</div>';
+          return;
+        }
+        
+        list.innerHTML = '<div style="padding: 40px 20px; text-align: center; color: #767b76;">Loading your tickets...</div>';
+
+        try {
+          const response = await fetch(`${API_URL}/support/user/${encodeURIComponent(email)}`);
+          const tickets = await response.json().catch(() => []);
+          if (!response.ok || !Array.isArray(tickets)) {
+            list.innerHTML = `<div style="padding: 40px 20px; text-align: center; color: #767b76;">Could not load tickets. Status: ${response.status}</div>`;
+            return;
+          }
+          allTickets = tickets;
+          renderTicketsTable();
+        } catch (error) {
+          console.error("Failed to load tickets:", error.message);
+          list.innerHTML = `<div style="padding: 40px 20px; text-align: center; color: #767b76;">Error: ${error.message}</div>`;
+        }
+      }
+
+      function formatStatus(status) {
+        return String(status).replace("_", " ").replace(/\b\w/g, c => c.toUpperCase());
+      }
+
+      function getCategoryLabel(category) {
+        const labels = {
+          order: "Order Issue",
+          delivery: "Delivery Issue", 
+          return: "Return / Refund",
+          product: "Product Quality",
+          coupon: "Coupon / Offer",
+          other: "Other"
+        };
+        return labels[category] || "Other";
+      }
+
+      function renderTicketsTable() {
+        const list = document.querySelector("#tickets-list");
+        const search = document.getElementById("ticket-search")?.value?.toLowerCase().trim() || "";
+        const status = document.getElementById("ticket-status-filter")?.value || "";
+        
+        const filtered = allTickets.filter(ticket => {
+          const matchesStatus = !status || ticket.status === status;
+          const matchesSearch = !search || 
+            String(ticket.id).includes(search) ||
+            String(ticket.name || "").toLowerCase().includes(search) ||
+            String(ticket.email || "").toLowerCase().includes(search) ||
+            String(ticket.order_id || "").includes(search) ||
+            String(ticket.message || "").toLowerCase().includes(search);
+          return matchesStatus && matchesSearch;
+        });
+
+        if (!filtered.length) {
+          list.innerHTML = '<div style="padding: 40px 20px; text-align: center; color: #767b76;">No tickets found.</div>';
+          return;
+        }
+
+        list.innerHTML = `
+          <table style="width: 100%; min-width: 0; border-collapse: collapse; table-layout: fixed; font-size: 13px;">
+            <thead>
+              <tr>
+                <th style="padding: 12px 14px; border-bottom: 1px solid #dbe3ee; background: #eef5ff; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-align: left; white-space: nowrap;">Ticket ID</th>
+                <th style="padding: 12px 14px; border-bottom: 1px solid #dbe3ee; background: #eef5ff; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-align: left; white-space: nowrap;">Category</th>
+                <th style="padding: 12px 14px; border-bottom: 1px solid #dbe3ee; background: #eef5ff; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-align: left; white-space: nowrap;">Order ID</th>
+                <th style="padding: 12px 14px; border-bottom: 1px solid #dbe3ee; background: #eef5ff; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-align: left; white-space: nowrap;">Status</th>
+                <th style="padding: 12px 14px; border-bottom: 1px solid #dbe3ee; background: #eef5ff; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-align: left; white-space: nowrap;">Created</th>
+                <th style="padding: 12px 14px; border-bottom: 1px solid #dbe3ee; background: #eef5ff; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-align: left; white-space: nowrap;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filtered.map(ticket => {
+                const isSelected = currentTicketId === ticket.id ? "background: #eff6ff;" : "";
+                const statusClass = ticket.status === 'open' ? 'style="background: #fee2e2; color: #991b1b;"' : 
+                                   ticket.status === 'in_progress' ? 'style="background: #fef3c7; color: #92400e;"' :
+                                   ticket.status === 'resolved' ? 'style="background: #dcfce7; color: #166534;"' :
+                                   'style="background: #e5e7eb; color: #374151;"';
+                return `
+                <tr style="${isSelected} cursor: pointer; transition: background .15s ease;" onclick="openTicket(${ticket.id})" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='${isSelected ? '#eff6ff' : 'transparent'}'">
+                  <td style="padding: 13px 14px; border-bottom: 1px solid #edf0f4; color: #374151;"><strong style="color: #2563eb;">#${ticket.id}</strong></td>
+                  <td style="padding: 13px 14px; border-bottom: 1px solid #edf0f4; color: #374151;">${escapeHtml(getCategoryLabel(ticket.category))}</td>
+                  <td style="padding: 13px 14px; border-bottom: 1px solid #edf0f4; color: #374151;">${ticket.order_id ? escapeHtml(ticket.order_id) : '-'}</td>
+                  <td style="padding: 13px 14px; border-bottom: 1px solid #edf0f4;"><span ${statusClass} style="padding: 4px 8px; border-radius: 20px; font-size: 11px; white-space: nowrap;">${escapeHtml(formatStatus(ticket.status))}</span></td>
+                  <td style="padding: 13px 14px; border-bottom: 1px solid #edf0f4; color: #6b7280; font-size: 12px;">${formatDate(ticket.created_at)}</td>
+                  <td style="padding: 13px 14px; border-bottom: 1px solid #edf0f4; color: #2563eb; font-weight: 600;">View →</td>
+                </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        `;
+      }
+
+      // Search handler
+      document.addEventListener("input", (e) => {
+        if (e.target.id === "ticket-search") {
+          renderTicketsTable();
+        }
+      });
+
+      async function openTicket(id) {
+        currentTicketId = id;
+        renderTicketsTable(); // Refresh to show selection
+
+        const panel = document.querySelector("#conversation-panel");
+        const titleEl = document.querySelector("#conversation-ticket-title");
+        const metaEl = document.querySelector("#conversation-meta");
+        const messagesEl = document.querySelector("#conversation-messages");
+        const replyEl = document.querySelector("#conversation-reply");
+
+        panel.style.display = "block";
+        titleEl.textContent = `Ticket #${id}`;
+        messagesEl.innerHTML = '<div style="text-align: center; color: #767b76; padding: 40px 20px;">Loading conversation...</div>';
+        replyEl.style.display = "none";
+
+        stopConversationPolling();
+
+        try {
+          const response = await fetch(`${API_URL}/support/${id}/messages`);
+          const messages = await response.json().catch(() => []);
+          if (!response.ok || !Array.isArray(messages)) {
+            messagesEl.innerHTML = '<div style="text-align: center; color: #767b76; padding: 40px 20px;">Could not load messages.</div>';
+            return;
+          }
+
+          // Find ticket info
+          const ticket = allTickets.find(t => t.id === id);
+          let ticketInfo = null;
+          if (ticket) {
+            ticketInfo = { 
+              status: formatStatus(ticket.status), 
+              meta: `${getCategoryLabel(ticket.category)} · ${ticket.order_id ? `Order #${ticket.order_id}` : ""} · ${formatDate(ticket.created_at)}` 
+            };
+          }
+
+          metaEl.innerHTML = ticketInfo 
+            ? `<strong>Status:</strong> ${ticketInfo.status} · ${ticketInfo.meta}`
+            : "";
+
+          if (!messages.length) {
+            messagesEl.innerHTML = '<div style="text-align: center; color: #767b76; padding: 40px 20px;">No messages in this ticket yet.</div>';
+          } else {
+            messagesEl.innerHTML = messages.map(msg => `
+              <div style="max-width: 85%; padding: 12px 16px; border-radius: 16px; font-size: 13px; line-height: 1.5; ${msg.is_customer_reply ? 'background: #e9f0e5; color: var(--ink); border-bottom-left-radius: 4px; align-self: flex-end; margin-left: auto;' : 'background: var(--green); color: #fff; border-bottom-right-radius: 4px; align-self: flex-start;'}">
+                <div>${escapeHtml(msg.message)}</div>
+                <div style="font-size: 10px; opacity: .7; margin-top: 6px; ${msg.is_customer_reply ? 'text-align: right;' : 'text-align: left;'}">${formatDate(msg.created_at)}</div>
+              </div>
+            `).join("");
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+          }
+
+          const user = JSON.parse(localStorage.getItem("sriram-store-user") || "null");
+          const isOpen = ticket && (ticket.status === "open" || ticket.status === "in_progress");
+          if (user?.id && isOpen) {
+            replyEl.style.display = "block";
+            replyEl.dataset.ticketId = id;
+          }
+
+          startConversationPolling(id, messages.length);
+        } catch (error) {
+          console.error("Failed to load conversation:", error.message);
+          messagesEl.innerHTML = '<div style="text-align: center; color: #767b76; padding: 40px 20px;">Could not load conversation.</div>';
+        }
+      }
+
+      function startConversationPolling(ticketId, lastMessageCount) {
+        stopConversationPolling();
+        conversationPollInterval = setInterval(async () => {
+          try {
+            const response = await fetch(`${API_URL}/support/${ticketId}/messages`);
+            const messages = await response.json().catch(() => []);
+            if (response.ok && Array.isArray(messages) && messages.length > lastMessageCount) {
+              const messagesEl = document.querySelector("#conversation-messages");
+              if (messagesEl) {
+                messagesEl.innerHTML = messages.map(msg => `
+                  <div style="max-width: 85%; padding: 12px 16px; border-radius: 16px; font-size: 13px; line-height: 1.5; ${msg.is_customer_reply ? 'background: #e9f0e5; color: var(--ink); border-bottom-left-radius: 4px; align-self: flex-end; margin-left: auto;' : 'background: var(--green); color: #fff; border-bottom-right-radius: 4px; align-self: flex-start;'}">
+                    <div>${escapeHtml(msg.message)}</div>
+                    <div style="font-size: 10px; opacity: .7; margin-top: 6px; ${msg.is_customer_reply ? 'text-align: right;' : 'text-align: left;'}">${formatDate(msg.created_at)}</div>
+                  </div>
+                `).join("");
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+              }
+              lastMessageCount = messages.length;
+            }
+          } catch (error) {
+            console.error("Conversation polling failed:", error.message);
+          }
+        }, 5000);
+      }
+
+      function stopConversationPolling() {
+        if (conversationPollInterval) {
+          clearInterval(conversationPollInterval);
+          conversationPollInterval = null;
+        }
+      }
+
+      // Reply functionality
+      document.addEventListener("click", async (e) => {
+        if (e.target.id === "reply-send") {
+          const replyEl = document.querySelector("#conversation-reply");
+          const ticketId = Number(replyEl.dataset.ticketId);
+          const textarea = document.querySelector("#reply-message");
+          const message = textarea.value.trim();
+          
+          if (!message) {
+            showToast("Please enter a message", false);
+            return;
+          }
+
+          const user = JSON.parse(localStorage.getItem("sriram-store-user") || "null");
+          if (!user?.id) {
+            showToast("Please log in to reply", false);
+            return;
+          }
+
+          try {
+            const response = await fetch(`${API_URL}/support/${ticketId}/reply`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userId: user.id, message })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (response.ok) {
+              textarea.value = "";
+              showToast("Reply sent successfully");
+              openTicket(ticketId);
+            } else {
+              showToast(data.error || "Failed to send reply", false);
+            }
+          } catch (error) {
+            console.error("Reply failed:", error.message);
+            showToast("Connection error. Please try again.", false);
+          }
+        }
+
+        if (e.target.id === "reply-close") {
+          const panel = document.querySelector("#conversation-panel");
+          panel.style.display = "none";
+          currentTicketId = null;
+          stopConversationPolling();
+          renderTicketsTable();
+        }
+      });
+
+      // Load order options for a specific user ID
+      async function loadUserOrderOptions(userId) {
+        const select = document.querySelector("#support-order");
+        if (!select || !userId) return;
+
+        select.innerHTML = '<option value="">Loading your orders...</option>';
+        select.disabled = true;
+
+        try {
+          const url = `${API_URL}/orders?userId=${encodeURIComponent(userId)}`;
+          console.log("Fetching orders from:", url);
+          const response = await fetch(url);
+          console.log("Response status:", response.status);
+          const orders = await response.json().catch(() => []);
+          console.log("Orders received:", orders);
+          if (!response.ok || !Array.isArray(orders)) {
+            select.innerHTML = `<option value="">Failed to load orders (Status: ${response.status})</option>`;
+            select.disabled = false;
+            return;
+          }
+          
+          const validOrders = orders.filter((order) => order?.id != null);
+          
+          if (validOrders.length === 0) {
+            select.innerHTML = '<option value="">No orders found for this account</option>';
+            select.disabled = false;
+            select.required = false;
+            return;
+          }
+          
+          // Populate select dropdown with order IDs
+          select.innerHTML = '<option value="">Select an order</option>' + 
+            validOrders.map((order) => 
+              `<option value="${escapeHtml(order.id)}">${escapeHtml(order.id)}</option>`
+            ).join("");
+          
+          select.disabled = false;
+          select.required = true;
+          
+        } catch (error) {
+          console.error("Failed to load user orders:", error.message);
+          select.innerHTML = `<option value="">Error: ${error.message}</option>`;
+          select.disabled = false;
+        }
+      }
+    </script>
+  </body>
+</html>

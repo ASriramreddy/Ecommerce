@@ -1,0 +1,2724 @@
+import "dotenv/config";
+import { fileURLToPath } from "url";
+import path, { dirname, resolve } from "path";
+import fs from "fs";
+import express from "express";
+import mysql from "mysql2";
+import cors from "cors";
+import crypto from "crypto";
+import nodemailer from "nodemailer";
+
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const projectRootEnv = resolve(__dirname, "../.env");
+if (fs.existsSync(projectRootEnv)) {
+    const lines = fs.readFileSync(projectRootEnv, "utf8").split(/\r?\n/);
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const eq = trimmed.indexOf("=");
+        if (eq === -1) continue;
+        const key = trimmed.slice(0, eq).trim();
+        if (process.env[key] === undefined) {
+            process.env[key] = trimmed.slice(eq + 1).trim();
+        }
+    }
+}
+
+const EMAIL_HOST = process.env.EMAIL_HOST;
+const EMAIL_PORT = Number(process.env.EMAIL_PORT);
+const EMAIL_USER = process.env.EMAIL_USER;
+const EMAIL_PASS = process.env.EMAIL_PASS;
+const ORDER_NOTIFICATION_EMAIL = (process.env.ORDER_NOTIFICATION_EMAIL || process.env.EMAIL_USER || "").trim();
+
+// Store/Warehouse Location for Distance-based Delivery
+const STORE_LATITUDE = Number(process.env.STORE_LATITUDE) || 13.0827;
+const STORE_LONGITUDE = Number(process.env.STORE_LONGITUDE) || 80.2707;
+const DELIVERY_RADIUS_KM = Number(process.env.DELIVERY_RADIUS_KM) || 30;
+
+let emailTransporter = null;
+if (EMAIL_HOST && EMAIL_PORT && EMAIL_USER && EMAIL_PASS) {
+    emailTransporter = nodemailer.createTransport({
+        host: EMAIL_HOST,
+        port: EMAIL_PORT,
+        secure: Number(EMAIL_PORT) === 465,
+        auth: { user: EMAIL_USER, pass: EMAIL_PASS }
+    });
+    emailTransporter.verify().then(
+        () => {
+            console.log(`Email transporter verified. Sending as: ${EMAIL_USER}. Order notifications go to: ${ORDER_NOTIFICATION_EMAIL || "(unset)"}`);
+        },
+        (err) => console.error("Email transporter verification failed:", err.message)
+    );
+} else {
+    console.warn("Email not configured. Set EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env to enable order confirmation emails.");
+}
+
+async function sendOrderEmail({ to, name, id, items, subtotal, discount, totalAmount, deliveryCharge, address, couponCode }) {
+    if (!emailTransporter) {
+        throw new Error("Email transporter not configured. Check EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env");
+    }
+    const fmt = (value) => `Rs.${Number(value || 0).toLocaleString("en-IN")}`;
+    const subtotalText = fmt(subtotal);
+    const discountText = fmt(discount);
+    const totalText = fmt(totalAmount);
+    const deliveryText = fmt(deliveryCharge);
+    const couponRow = couponCode ? `<tr><td style="padding:10px 14px;color:#666;">Coupon</td><td style="padding:10px 14px;text-align:right;"><strong>${couponCode}</strong></td></tr>` : "";
+    const discountRow = Number(discount) > 0 ? `<tr><td style="padding:10px 14px;color:#666;">Discount</td><td style="padding:10px 14px;text-align:right;color:#2c5f2d;">-&#8377;${Number(discount).toLocaleString("en-IN")}</td></tr>` : "";
+
+    const customerEmail = String(to || "").trim();
+    const primaryRecipient = customerEmail || ORDER_NOTIFICATION_EMAIL;
+    const ccList = ORDER_NOTIFICATION_EMAIL && customerEmail && ORDER_NOTIFICATION_EMAIL.toLowerCase() !== customerEmail.toLowerCase()
+        ? [ORDER_NOTIFICATION_EMAIL]
+        : [];
+
+    const mailOptions = {
+        from: `Sriram Store <${EMAIL_USER}>`,
+        to: primaryRecipient,
+        cc: ccList,
+        replyTo: ORDER_NOTIFICATION_EMAIL || customerEmail || undefined,
+        subject: `Order Confirmed - ${id} | Sriram Store`,
+        headers: {
+            "X-Entity-Ref-ID": id,
+            "X-Mailer": "SriramStore/1.0"
+        },
+        text: `Order Confirmed!\n\nHello ${name},\n\nThank you for your order with Sriram Store.\n\nOrder ID: ${id}\nItems: ${items}${couponCode ? `\nCoupon: ${couponCode}` : ""}\nSubtotal: ${subtotalText}${Number(discount) > 0 ? `\nDiscount: -${discountText}` : ""}\nDelivery Charge: ${deliveryText}\nTotal Paid: ${totalText}\nDelivery Address: ${address}\n\nYour order has been successfully placed and will be processed shortly.\n\nThank you for shopping with us!\n\n— Sriram Store`,
+        html: `
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#fafafa;padding:20px;">
+                <div style="background:#2c5f2d;color:#fff;padding:18px 22px;border-radius:8px 8px 0 0;text-align:center;">
+                    <h1 style="margin:0;color:#fff;font-size:22px;letter-spacing:0.3px;">Order Confirmed!</h1>
+                </div>
+                <div style="background:#fff;padding:24px 22px;border:1px solid #eee;border-top:none;border-radius:0 0 8px 8px;">
+                    <p style="margin:0 0 14px;">Hello <strong>${name}</strong>,</p>
+                    <p style="margin:0 0 18px;color:#444;">Thank you for your order with <strong>Sriram Store</strong>. Below is your complete payment summary.</p>
+                    <table style="width:100%;border-collapse:collapse;margin:0 0 18px;background:#f7faf5;border:1px solid #e3ecdc;border-radius:8px;">
+                        <tr><td style="padding:10px 14px;color:#666;">Order ID</td><td style="padding:10px 14px;text-align:right;"><strong>${id}</strong></td></tr>
+                        <tr><td style="padding:10px 14px;color:#666;">Items</td><td style="padding:10px 14px;text-align:right;"><strong>${items}</strong></td></tr>
+                        ${couponRow}
+                        <tr><td style="padding:10px 14px;color:#666;">Subtotal</td><td style="padding:10px 14px;text-align:right;">&#8377;${Number(subtotal || 0).toLocaleString("en-IN")}</td></tr>
+                        ${discountRow}
+                        <tr><td style="padding:10px 14px;color:#666;">Delivery Charge</td><td style="padding:10px 14px;text-align:right;">&#8377;${Number(deliveryCharge).toLocaleString("en-IN")}</td></tr>
+                        <tr style="background:#eaf3e3;"><td style="padding:14px;color:#2c5f2d;font-size:15px;"><strong>Total Paid</strong></td><td style="padding:14px;text-align:right;color:#2c5f2d;font-size:20px;"><strong>&#8377;${Number(totalAmount).toLocaleString("en-IN")}</strong></td></tr>
+                        <tr><td style="padding:10px 14px;color:#666;vertical-align:top;">Delivery Address</td><td style="padding:10px 14px;text-align:right;">${address}</td></tr>
+                    </table>
+                    <p style="margin:0 0 8px;">Your order has been successfully placed and will be processed shortly.</p>
+                    <p style="margin:0;color:#666;font-size:13px;">Thank you for shopping with us!</p>
+                    <p style="margin:14px 0 0;color:#999;font-size:12px;">— Sriram Store</p>
+                </div>
+            </div>
+        `
+    };
+
+    try {
+        return await emailTransporter.sendMail(mailOptions);
+    } catch (firstErr) {
+        console.warn(`[ORDERS] First email attempt failed: ${firstErr.message}. Retrying in 1s...`);
+        await new Promise((r) => setTimeout(r, 1000));
+        return await emailTransporter.sendMail(mailOptions);
+    }
+}
+
+const app = express();
+const adminTokens = new Set();
+const supportAdminTokens = new Set();
+
+function parseProductIds(value) {
+    try {
+        const ids = JSON.parse(value || "[]");
+        return Array.isArray(ids) ? ids.map(Number).filter((id) => Number.isInteger(id) && id > 0) : [];
+    } catch {
+        return [];
+    }
+}
+
+const uploadDirectory = path.join(__dirname, "..", "public", "images", "uploads");
+
+fs.mkdirSync(uploadDirectory, { recursive: true });
+
+
+// ===============================
+// MIDDLEWARE
+// ===============================
+
+app.use(cors({ origin: true, credentials: true }));
+app.use(express.json());
+
+app.use(express.static(path.join(__dirname, "..", "frontend")));
+
+app.use(
+    "/images",
+    express.static(
+        path.join(__dirname, "..", "public", "images")
+    )
+);
+
+
+// ===============================
+// MYSQL DATABASE
+// ===============================
+
+const dbConfig = {
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT),
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    multipleStatements: false,
+
+    ssl: {
+        rejectUnauthorized: false
+    }
+};
+
+
+console.log("MySQL configuration:");
+console.log("Host:", dbConfig.host);
+console.log("Port:", dbConfig.port);
+console.log("User:", dbConfig.user);
+console.log(
+    "Password:",
+    dbConfig.password ? "FOUND" : "MISSING"
+);
+console.log("Database:", dbConfig.database);
+
+
+const db = mysql.createPool(dbConfig);
+
+
+// ===============================
+// DATABASE SCHEMA INITIALIZATION
+// ===============================
+
+async function ensureDatabaseExists() {
+    const bootstrap = mysql.createPool({ ...dbConfig, database: undefined });
+    try {
+        await bootstrap.promise().query(
+            `CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+        );
+        console.log(`✅ Database "${dbConfig.database}" is ready`);
+    } finally {
+        bootstrap.end();
+    }
+}
+
+const databaseReady = (async () => {
+    try {
+        await db.promise().getConnection().then((connection) => connection.release());
+        console.log("✅ MySQL connected successfully");
+
+        await ensureDatabaseExists();
+
+        await db.promise().query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(255) NOT NULL UNIQUE,
+                password_hash VARCHAR(255) NOT NULL,
+                email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+                verification_token VARCHAR(255) NULL,
+                verification_token_expires TIMESTAMP NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        const [userCols] = await db.promise().query("SHOW COLUMNS FROM users");
+        const colNames = userCols.map(c => c.Field);
+        if (!colNames.includes("email_verified")) {
+            await db.promise().query("ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE AFTER password_hash");
+        }
+        if (!colNames.includes("verification_token")) {
+            await db.promise().query("ALTER TABLE users ADD COLUMN verification_token VARCHAR(255) NULL AFTER email_verified");
+        }
+        if (!colNames.includes("verification_token_expires")) {
+            await db.promise().query("ALTER TABLE users ADD COLUMN verification_token_expires TIMESTAMP NULL AFTER verification_token");
+        }
+        console.log("✅ Users table is ready");
+    } catch (error) {
+        console.error("❌ MySQL initialization failed");
+        console.error("Error code:", error.code);
+        console.error("Error message:", error.message);
+        throw error;
+    }
+})();
+
+const inventoryReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS products (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(150) NOT NULL,
+            price DECIMAL(10,2) NOT NULL,
+            category VARCHAR(100) NOT NULL,
+            image VARCHAR(255),
+            description TEXT NULL,
+            stock INT NOT NULL DEFAULT 0,
+            discount DECIMAL(5,2) NOT NULL DEFAULT 0,
+            expiry DATE NULL
+        )
+    `);
+    const [stockColumns] = await dbPromise.query("SHOW COLUMNS FROM products LIKE 'stock'");
+    if (!stockColumns.length) {
+        await dbPromise.query("ALTER TABLE products ADD COLUMN stock INT NOT NULL DEFAULT 0");
+    }
+    const [discountColumns] = await dbPromise.query("SHOW COLUMNS FROM products LIKE 'discount'");
+    if (!discountColumns.length) {
+        await dbPromise.query("ALTER TABLE products ADD COLUMN discount DECIMAL(5,2) NOT NULL DEFAULT 0");
+    }
+    const [expiryColumns] = await dbPromise.query("SHOW COLUMNS FROM products LIKE 'expiry'");
+    if (!expiryColumns.length) {
+        await dbPromise.query("ALTER TABLE products ADD COLUMN expiry DATE NULL");
+    }
+    const [descriptionColumns] = await dbPromise.query("SHOW COLUMNS FROM products LIKE 'description'");
+    if (!descriptionColumns.length) {
+        await dbPromise.query("ALTER TABLE products ADD COLUMN description TEXT NULL");
+    }
+    console.log("✅ Products table is ready");
+}).catch((error) => {
+    console.error("❌ Products table setup failed:", error.message);
+    throw error;
+});
+
+const profilesReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS user_profiles (
+            user_id INT PRIMARY KEY,
+            phone VARCHAR(20),
+            address TEXT,
+            city VARCHAR(100),
+            district VARCHAR(100),
+            state VARCHAR(100),
+            country VARCHAR(100) DEFAULT 'India',
+            pin VARCHAR(10),
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `);
+    const [districtCols] = await dbPromise.query("SHOW COLUMNS FROM user_profiles LIKE 'district'");
+    if (!districtCols.length) {
+        await dbPromise.query(
+            "ALTER TABLE user_profiles ADD COLUMN district VARCHAR(100) AFTER city, ADD COLUMN state VARCHAR(100) AFTER district, ADD COLUMN country VARCHAR(100) DEFAULT 'India' AFTER state"
+        );
+    }
+    console.log("✅ User profiles table is ready");
+}).catch((error) => {
+    console.error("❌ User profiles table setup failed:", error.message);
+    throw error;
+});
+
+const ordersReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS orders (
+            id VARCHAR(20) PRIMARY KEY,
+            user_id INT NOT NULL,
+            items INT NOT NULL,
+            address TEXT NOT NULL,
+            delivery_charge DECIMAL(10,2) NOT NULL DEFAULT 0,
+            Total_Amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+            status ENUM('placed','packed','shipped','out_for_delivery','delivered','processing','cancelled','returned') NOT NULL DEFAULT 'placed',
+            product_ids TEXT NULL,
+            coupon_code VARCHAR(50) NULL,
+            coupon_discount DECIMAL(10,2) NOT NULL DEFAULT 0,
+            discount DECIMAL(10,2) NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `);
+    const [deliveryCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'delivery_charge'");
+    if (!deliveryCols.length) {
+        await dbPromise.query("ALTER TABLE orders ADD COLUMN delivery_charge DECIMAL(10,2) NOT NULL DEFAULT 0");
+    }
+    const [totalCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'Total_Amount'");
+    if (!totalCols.length) {
+        await dbPromise.query("ALTER TABLE orders ADD COLUMN Total_Amount DECIMAL(10,2) NOT NULL DEFAULT 0");
+    }
+    const [statusCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'status'");
+    if (statusCols.length) {
+        const type = statusCols[0].Type || "";
+        if (!type.includes("out_for_delivery") || !type.includes("packed")) {
+            await dbPromise.query("ALTER TABLE orders MODIFY COLUMN status ENUM('placed','packed','shipped','out_for_delivery','delivered','processing','cancelled','returned') NOT NULL DEFAULT 'placed'");
+        }
+    }
+    const [couponCodeCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'coupon_code'");
+    if (!couponCodeCols.length) {
+        await dbPromise.query("ALTER TABLE orders ADD COLUMN coupon_code VARCHAR(50) NULL AFTER status");
+    }
+    const [couponDiscountCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'coupon_discount'");
+    if (!couponDiscountCols.length) {
+        await dbPromise.query("ALTER TABLE orders ADD COLUMN coupon_discount DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER coupon_code");
+    }
+    const [discountCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'discount'");
+    if (!discountCols.length) {
+        await dbPromise.query("ALTER TABLE orders ADD COLUMN discount DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER coupon_discount");
+    }
+    const [productIdsCols] = await dbPromise.query("SHOW COLUMNS FROM orders LIKE 'product_ids'");
+    if (!productIdsCols.length) {
+        await dbPromise.query("ALTER TABLE orders ADD COLUMN product_ids TEXT NULL AFTER status");
+    }
+    console.log("✅ Orders table is ready");
+}).catch((error) => {
+    console.error("❌ Orders table setup failed:", error.message);
+    throw error;
+});
+
+const deliveryChargesReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS delivery_charges (
+            state VARCHAR(100) PRIMARY KEY,
+            charge DECIMAL(10,2) NOT NULL DEFAULT 0,
+            description VARCHAR(255)
+        )
+    `);
+    const [rows] = await dbPromise.query("SELECT COUNT(*) AS count FROM delivery_charges");
+    if (rows[0].count === 0) {
+        const defaultCharges = [
+            ["Delhi", 30, "Capital territory"],
+            ["Maharashtra", 35, "Western region"],
+            ["Tamil Nadu", 35, "Southern region"],
+            ["Karnataka", 40, "Southern region"],
+            ["Telangana", 40, "Southern region"],
+            ["Andhra Pradesh", 40, "Southern region"],
+            ["Kerala", 45, "Southern region"],
+            ["West Bengal", 40, "Eastern region"],
+            ["Odisha", 55, "Eastern region"],
+            ["Bihar", 45, "Eastern region"],
+            ["Jharkhand", 50, "Eastern region"],
+            ["Uttar Pradesh", 45, "Northern region"],
+            ["Rajasthan", 50, "Western region"],
+            ["Gujarat", 40, "Western region"],
+            ["Madhya Pradesh", 50, "Central region"],
+            ["Chhattisgarh", 55, "Central region"],
+            ["Punjab", 45, "Northern region"],
+            ["Haryana", 40, "Northern region"],
+            ["Uttarakhand", 50, "Northern region"],
+            ["Himachal Pradesh", 50, "Northern region"],
+            ["Chandigarh", 30, "Union territory"]
+        ];
+        const placeholders = defaultCharges.map(() => "(?, ?, ?)").join(", ");
+        const values = defaultCharges.flatMap(([state, charge, desc]) => [state, charge, desc]);
+        await dbPromise.query(
+            `INSERT INTO delivery_charges (state, charge, description) VALUES ${placeholders}`,
+            values
+        );
+    }
+    console.log("✅ Delivery charges table is ready");
+}).catch((error) => {
+    console.error("❌ Delivery charges table setup failed:", error.message);
+    throw error;
+});
+
+const couponsReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS coupons (
+            code VARCHAR(50) PRIMARY KEY,
+            discount_percent DECIMAL(5,2) NOT NULL,
+            min_order_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+            max_uses INT DEFAULT NULL,
+            used_count INT NOT NULL DEFAULT 0,
+            expires_at TIMESTAMP NULL,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+    console.log("✅ Coupons table is ready");
+}).catch((error) => {
+    console.error("❌ Coupons table setup failed:", error.message);
+    throw error;
+});
+
+const referralsReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS referrals (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            referrer_id INT NOT NULL,
+            referee_id INT NOT NULL,
+            referral_code VARCHAR(20) NOT NULL,
+            status ENUM('pending', 'completed', 'expired') DEFAULT 'pending',
+            reward_given TINYINT(1) DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP NULL,
+            INDEX idx_referrer (referrer_id),
+            INDEX idx_referee (referee_id),
+            INDEX idx_code (referral_code)
+        )
+    `);
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS user_referral_codes (
+            user_id INT PRIMARY KEY,
+            referral_code VARCHAR(20) UNIQUE NOT NULL,
+            total_referrals INT DEFAULT 0,
+            successful_referrals INT DEFAULT 0,
+            total_rewards_earned DECIMAL(10,2) DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+    `);
+    console.log("✅ Referrals tables are ready");
+}).catch((error) => {
+    console.error("❌ Referrals tables setup failed:", error.message);
+    throw error;
+});
+
+const festivalsReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS festivals (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(150) NOT NULL UNIQUE,
+            image_url VARCHAR(500) NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+    const [imageCols] = await dbPromise.query("SHOW COLUMNS FROM festivals LIKE 'image_url'");
+    if (!imageCols.length) {
+        await dbPromise.query("ALTER TABLE festivals ADD COLUMN image_url VARCHAR(500) NULL AFTER name");
+    }
+    console.log("✅ Festivals table is ready");
+}).catch((error) => {
+    console.error("❌ Festivals table setup failed:", error.message);
+    throw error;
+});
+
+const offersReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS offers (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            festival_id INT NULL,
+            name VARCHAR(150) NOT NULL,
+            coupon_code VARCHAR(50) NULL,
+            discount_percent DECIMAL(5,2) NOT NULL,
+            min_order_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+            start_date DATE NULL,
+            end_date DATE NULL,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            image_url VARCHAR(500) NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (festival_id) REFERENCES festivals(id) ON DELETE SET NULL
+        )
+    `);
+    const [couponCodeCols] = await dbPromise.query("SHOW COLUMNS FROM offers LIKE 'coupon_code'");
+    if (!couponCodeCols.length) {
+        await dbPromise.query("ALTER TABLE offers ADD COLUMN coupon_code VARCHAR(50) NULL AFTER name");
+    }
+    const [codeUnique] = await dbPromise.query("SHOW INDEX FROM offers WHERE Key_name = 'coupon_code'");
+    if (!codeUnique.length) {
+        try {
+            await dbPromise.query("ALTER TABLE offers ADD UNIQUE KEY coupon_code (coupon_code)");
+        } catch (e) {}
+    }
+    const [offerImageCols] = await dbPromise.query("SHOW COLUMNS FROM offers LIKE 'image_url'");
+    if (!offerImageCols.length) {
+        await dbPromise.query("ALTER TABLE offers ADD COLUMN image_url VARCHAR(500) NULL AFTER is_active");
+    }
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS offer_products (
+            offer_id INT NOT NULL,
+            product_id INT NOT NULL,
+            PRIMARY KEY (offer_id, product_id),
+            FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE CASCADE,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+        )
+    `);
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS offer_categories (
+            offer_id INT NOT NULL,
+            category VARCHAR(100) NOT NULL,
+            PRIMARY KEY (offer_id, category),
+            FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE CASCADE
+        )
+    `);
+    console.log("✅ Offers tables are ready");
+}).catch((error) => {
+    console.error("❌ Offers table setup failed:", error.message);
+    throw error;
+});
+
+const supportReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS support_tickets (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(150) NOT NULL,
+            email VARCHAR(200) NOT NULL,
+            phone VARCHAR(20) NULL,
+            order_id VARCHAR(50) NULL,
+            category VARCHAR(100) NOT NULL,
+            message TEXT NOT NULL,
+            status ENUM('open','in_progress','resolved','closed') NOT NULL DEFAULT 'open',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+    const [phoneCols] = await dbPromise.query("SHOW COLUMNS FROM support_tickets LIKE 'phone'");
+    if (!phoneCols.length) {
+        await dbPromise.query("ALTER TABLE support_tickets ADD COLUMN phone VARCHAR(20) NULL AFTER email");
+    }
+    const [orderCols] = await dbPromise.query("SHOW COLUMNS FROM support_tickets LIKE 'order_id'");
+    if (!orderCols.length) {
+        await dbPromise.query("ALTER TABLE support_tickets ADD COLUMN order_id VARCHAR(50) NULL AFTER phone");
+    }
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS support_replies (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            ticket_id INT NOT NULL,
+            message TEXT NOT NULL,
+            is_customer_reply BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (ticket_id) REFERENCES support_tickets(id) ON DELETE CASCADE
+        )
+    `);
+    console.log("✅ Support tables are ready");
+}).catch((error) => {
+    console.error("❌ Support tables setup failed:", error.message);
+    throw error;
+});
+
+const notificationsReady = databaseReady.then(async () => {
+    await db.promise().query(`
+        CREATE TABLE IF NOT EXISTS user_notifications (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            message VARCHAR(500) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `);
+    console.log("✅ User notifications table is ready");
+}).catch((error) => {
+    console.error("❌ User notifications table setup failed:", error.message);
+    throw error;
+});
+
+const reviewsReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS reviews (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            product_id INT NOT NULL,
+            user_id INT NOT NULL,
+            rating DECIMAL(2,1) NOT NULL,
+            comment TEXT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `);
+    console.log("✅ Reviews table is ready");
+}).catch((error) => {
+    console.error("❌ Reviews table setup failed:", error.message);
+    throw error;
+});
+
+const dailyRewardsReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS daily_rewards (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            reward_type VARCHAR(20) NOT NULL,
+            reward_value VARCHAR(50) NOT NULL,
+            spin_date DATE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE KEY unique_daily_spin (user_id, spin_date)
+        )
+    `);
+    console.log("✅ Daily rewards table is ready");
+}).catch((error) => {
+    console.error("❌ Daily rewards table setup failed:", error.message);
+    throw error;
+});
+
+const passwordResetReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS password_resets (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            otp VARCHAR(6) NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            used BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            INDEX idx_email_otp (email, otp)
+        )
+    `);
+    console.log("✅ Password resets table is ready");
+}).catch((error) => {
+    console.error("❌ Password resets table setup failed:", error.message);
+    throw error;
+});
+
+const spinPrizesReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS spin_prizes (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            type VARCHAR(20) NOT NULL,
+            value VARCHAR(50) NOT NULL,
+            probability DECIMAL(5,2) NOT NULL DEFAULT 0,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+    const [rows] = await dbPromise.query("SELECT COUNT(*) AS count FROM spin_prizes");
+    if (rows[0].count === 0) {
+        const prizes = [
+            ["10 Points", "points", "10", 30],
+            ["20 Points", "points", "20", 15],
+            ["5% Coupon", "coupon", "SPIN5", 20],
+            ["10% Coupon", "coupon", "SPIN10", 15],
+            ["50 Points", "points", "50", 10],
+            ["25% Coupon", "coupon", "SPIN25", 5],
+            ["Jackpot 100 Points", "points", "100", 5]
+        ];
+        const placeholders = prizes.map(() => "(?, ?, ?, ?)").join(", ");
+        const values = prizes.flatMap(([name, type, value, prob]) => [name, type, value, prob]);
+        await dbPromise.query(
+            `INSERT INTO spin_prizes (name, type, value, probability) VALUES ${placeholders}`,
+            values
+        );
+    }
+    console.log("✅ Spin prizes table is ready");
+}).catch((error) => {
+    console.error("❌ Spin prizes table setup failed:", error.message);
+    throw error;
+});
+
+Promise.all([inventoryReady, profilesReady, ordersReady, deliveryChargesReady, couponsReady, festivalsReady, offersReady, supportReady, notificationsReady, reviewsReady, dailyRewardsReady, passwordResetReady, spinPrizesReady])
+    .then(() => console.log("✅ All tables are ready"))
+    .catch((error) => console.error("❌ Schema setup encountered errors:", error.message));
+
+
+// ===============================
+// YOUR OTHER API ROUTES
+// ===============================
+
+// Keep your existing:
+// app.post("/auth/register", ...)
+// app.post("/auth/login", ...)
+// app.get("/api/products", ...)
+// app.post("/api/orders", ...)
+// etc.
+
+
+// ===============================
+// START SERVER
+// ===============================
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+    console.log(
+        `Server running at http://localhost:${PORT}`
+    );
+});
+
+app.get("/products", async (req, res) => {
+    try {
+        await inventoryReady;
+        await reviewsReady;
+    } catch (error) {
+        console.error("Inventory setup failed:", error.message);
+        return res.status(503).json({ error: "Products are temporarily unavailable" });
+    }
+    const category = String(req.query.category || "").trim();
+    const query = category
+        ? `SELECT p.id, p.name, p.price, p.category, p.image, p.description, p.stock, p.discount, p.expiry,
+                COALESCE(AVG(r.rating), 0) as rating, COALESCE(COUNT(r.id), 0) as reviews
+         FROM products p
+         LEFT JOIN reviews r ON r.product_id = p.id
+         WHERE p.category = ?
+         GROUP BY p.id
+         ORDER BY p.id`
+        : `SELECT p.id, p.name, p.price, p.category, p.image, p.description, p.stock, p.discount, p.expiry,
+                COALESCE(AVG(r.rating), 0) as rating, COALESCE(COUNT(r.id), 0) as reviews
+         FROM products p
+         LEFT JOIN reviews r ON r.product_id = p.id
+         GROUP BY p.id
+         ORDER BY p.id`;
+    db.query(query, category ? [category] : [], (err, result) => {
+        if (err) {
+            console.error("Products query failed:", err.message);
+            return res.status(503).json({ error: "Products are temporarily unavailable" });
+        }
+        res.json(result);
+    });
+});
+
+app.get("/products/:id/reviews", async (req, res) => {
+    const productId = Number(req.params.id);
+    if (!Number.isInteger(productId) || productId < 1) return res.status(400).json({ error: "Valid product id is required" });
+    try {
+        await inventoryReady;
+        await reviewsReady;
+        const [reviews] = await db.promise().query(
+            `SELECT r.id, r.product_id, r.user_id, u.name as user_name, r.rating, r.comment, r.created_at
+             FROM reviews r
+             JOIN users u ON u.id = r.user_id
+             WHERE r.product_id = ?
+             ORDER BY r.created_at DESC`,
+            [productId]
+        );
+        res.json(reviews.map((row) => ({
+            id: row.id,
+            productId: row.product_id,
+            userId: row.user_id,
+            userName: row.user_name,
+            rating: Number(row.rating) || 0,
+            comment: row.comment || "",
+            createdAt: row.created_at
+        })));
+    } catch (error) {
+        console.error("Fetch reviews failed:", error.message);
+        res.status(503).json({ error: "Could not load reviews" });
+    }
+});
+
+app.get("/products/:id/rating", async (req, res) => {
+    const productId = Number(req.params.id);
+    if (!Number.isInteger(productId) || productId < 1) return res.status(400).json({ error: "Valid product id is required" });
+    try {
+        await inventoryReady;
+        await reviewsReady;
+        const [[stats]] = await db.promise().query(
+            "SELECT AVG(rating) as avg_rating, COUNT(*) as review_count FROM reviews WHERE product_id = ?",
+            [productId]
+        );
+        res.json({
+            productId,
+            avgRating: stats?.avg_rating ? Number(stats.avg_rating) : 0,
+            reviewCount: stats?.review_count ? Number(stats.review_count) : 0
+        });
+    } catch (error) {
+        console.error("Fetch rating failed:", error.message);
+        res.status(503).json({ error: "Could not load rating" });
+    }
+});
+
+app.post("/products/:id/reviews", async (req, res) => {
+    const productId = Number(req.params.id);
+    const body = req.body || {};
+    const userId = Number(body.userId);
+    const rating = Number(body.rating);
+    const comment = String(body.comment || "").trim();
+    if (!Number.isInteger(productId) || productId < 1) return res.status(400).json({ error: "Valid product id is required" });
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "User id is required" });
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) return res.status(400).json({ error: "Rating must be between 1 and 5" });
+    try {
+        await inventoryReady;
+        await reviewsReady;
+        const [[product]] = await db.promise().query("SELECT id FROM products WHERE id = ?", [productId]);
+        if (!product) return res.status(404).json({ error: "Product not found" });
+        await ordersReady;
+        const [deliveredOrders] = await db.promise().query(
+            "SELECT product_ids FROM orders WHERE user_id = ? AND status = 'delivered'",
+            [userId]
+        );
+        const purchasedAfterDelivery = deliveredOrders.some((order) => parseProductIds(order.product_ids).includes(productId));
+        if (!purchasedAfterDelivery) return res.status(403).json({ error: "You can review products after delivery" });
+        const [result] = await db.promise().query(
+            "INSERT INTO reviews (product_id, user_id, rating, comment) VALUES (?, ?, ?, ?)",
+            [productId, userId, rating, comment || null]
+        );
+        const [[stats]] = await db.promise().query(
+            "SELECT AVG(rating) as avg_rating, COUNT(*) as review_count FROM reviews WHERE product_id = ?",
+            [productId]
+        );
+        res.status(201).json({
+            id: result.insertId,
+            productId,
+            userId,
+            rating,
+            comment: comment || null,
+            avgRating: Number(stats.avg_rating) || 0,
+            reviewCount: Number(stats.review_count) || 0
+        });
+    } catch (error) {
+        console.error("Create review failed:", error.message);
+        res.status(503).json({ error: "Could not submit review" });
+    }
+});
+
+app.get("/health", (req, res) => {
+    db.query("SELECT 1 AS connected", (err) => {
+        if (err) return res.status(503).json({ connected: false, error: err.message });
+        res.json({ connected: true });
+    });
+});
+
+function hashPassword(password) {
+    const salt = crypto.randomBytes(16).toString("hex");
+    const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+    return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, storedPassword) {
+    const [salt, storedHash] = storedPassword.split(":");
+    if (!salt || !storedHash) return false;
+    const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+    return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(storedHash, "hex"));
+}
+
+app.post("/auth/register", async (req, res) => {
+    const body = req.body || {};
+    const name = String(body.name || "").trim();
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "");
+    const adminEmail = String(process.env.ADMIN_EMAIL || "admin@sriramstore.local").toLowerCase();
+
+    if (!name || !email || password.length < 6) {
+        return res.status(400).json({ error: "Name, email, and a password of at least 6 characters are required" });
+    }
+    if (email === adminEmail) {
+        return res.status(403).json({ error: "This email is reserved for admin access" });
+    }
+
+    try {
+        await databaseReady;
+        const verificationToken = crypto.randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+        const [result] = await db.promise().query(
+            "INSERT INTO users (name, email, password_hash, email_verified, verification_token, verification_token_expires) VALUES (?, ?, ?, FALSE, ?, ?)",
+            [name, email, hashPassword(password), verificationToken, expiresAt]
+        );
+
+        if (emailTransporter) {
+            const verifyUrl = `${process.env.FRONTEND_URL || "http://localhost:3000"}/verify-email.html?token=${verificationToken}`;
+            try {
+                await emailTransporter.sendMail({
+                    from: `Sriram Store <${EMAIL_USER}>`,
+                    to: email,
+                    subject: "Verify your email - Sriram Store",
+                    text: `Welcome to Sriram Store! Please verify your email by clicking this link: ${verifyUrl}. This link expires in 24 hours.`,
+                    html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:20px;"><h2 style="color:#2c5f2d;">Welcome to Sriram Store!</h2><p>Thank you for registering. Please verify your email address by clicking the button below:</p><p style="text-align:center;margin:30px 0;"><a href="${verifyUrl}" style="background:#2c5f2d;color:#fff;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:bold;">Verify Email</a></p><p>Or copy this link: ${verifyUrl}</p><p style="color:#666;font-size:12px;">This link expires in 24 hours. If you didn't create an account, please ignore this email.</p></div>`
+                });
+            } catch (e) {
+                console.error("Failed to send verification email:", e.message);
+            }
+        }
+
+        res.status(201).json({ message: "Account created. Please check your email to verify your account." });
+    } catch (error) {
+        if (error.code === "ER_DUP_ENTRY") return res.status(409).json({ error: "An account with this email already exists" });
+        console.error("Registration failed:", error.message);
+        res.status(503).json({ error: "Could not create account" });
+    }
+});
+
+app.get("/auth/verify-email", async (req, res) => {
+    const token = String(req.query.token || "").trim();
+    if (!token) {
+        return res.status(400).send("<h1>Invalid verification link</h1><p>No verification token provided.</p>");
+    }
+
+    try {
+        await databaseReady;
+        const [rows] = await db.promise().query(
+            "SELECT id, email, email_verified FROM users WHERE verification_token = ? AND verification_token_expires > NOW()",
+            [token]
+        );
+
+        if (!rows.length) {
+            return res.status(400).send("<h1>Invalid or expired verification link</h1><p>This verification link is invalid or has expired. Please request a new one.</p>");
+        }
+
+        const user = rows[0];
+        if (user.email_verified) {
+            return res.send("<h1>Email already verified</h1><p>Your email is already verified. You can now <a href='/index.html'>sign in</a>.</p>");
+        }
+
+        await db.promise().query(
+            "UPDATE users SET email_verified = TRUE, verification_token = NULL, verification_token_expires = NULL WHERE id = ?",
+            [user.id]
+        );
+
+        res.send("<h1>Email verified successfully!</h1><p>Your email has been verified. You can now <a href='/index.html'>sign in</a>.</p>");
+    } catch (error) {
+        console.error("Email verification failed:", error.message);
+        res.status(503).send("<h1>Verification failed</h1><p>Could not verify email. Please try again later.</p>");
+    }
+});
+
+app.post("/auth/login", async (req, res) => {
+    const body = req.body || {};
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "");
+    const adminEmail = String(process.env.ADMIN_EMAIL || "admin@sriramstore.local").toLowerCase();
+    const adminPassword = String(process.env.ADMIN_PASSWORD || "admin123");
+
+    if (email === adminEmail) {
+        if (password !== adminPassword) {
+            return res.status(401).json({ error: "Invalid admin credentials" });
+        }
+        const token = crypto.randomBytes(32).toString("hex");
+        adminTokens.add(token);
+        return res.json({ token });
+    }
+
+    try {
+        await databaseReady;
+        const [rows] = await db.promise().query("SELECT id, name, email, password_hash, email_verified FROM users WHERE email = ?", [email]);
+        if (!rows.length || !verifyPassword(password, rows[0].password_hash)) {
+            return res.status(401).json({ error: "Email or password is incorrect" });
+        }
+        if (!rows[0].email_verified) {
+            return res.status(403).json({ error: "Please verify your email before signing in. Check your inbox for the verification link." });
+        }
+        res.json({ user: { id: rows[0].id, name: rows[0].name, email: rows[0].email } });
+    } catch (error) {
+        console.error("Login failed:", error.message);
+        res.status(503).json({ error: "Could not sign in" });
+    }
+});
+
+app.post("/auth/forgot-password", async (req, res) => {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    if (!email || !email.includes("@")) return res.status(400).json({ error: "Valid email is required" });
+    try {
+        await databaseReady;
+        await passwordResetReady;
+        const [rows] = await db.promise().query("SELECT id, name, email FROM users WHERE email = ?", [email]);
+        if (!rows.length) return res.status(404).json({ error: "No account found with this email" });
+        const user = rows[0];
+        const otp = String(Math.floor(100000 + Math.random() * 900000));
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+        await db.promise().query(
+            "INSERT INTO password_resets (user_id, email, otp, expires_at) VALUES (?, ?, ?, ?)",
+            [user.id, email, otp, expiresAt]
+        );
+        if (emailTransporter) {
+            try {
+                await emailTransporter.sendMail({
+                    from: `Sriram Store <${EMAIL_USER}>`,
+                    to: email,
+                    subject: "Password Reset OTP - Sriram Store",
+                    text: `Your OTP for password reset is: ${otp}. This OTP is valid for 15 minutes.`,
+                    html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:20px;"><h2 style="color:#2c5f2d;">Password Reset OTP</h2><p>Your OTP for password reset is:</p><div style="font-size:32px;font-weight:bold;color:#2c5f2d;letter-spacing:4px;padding:20px;background:#f0f7ee;border-radius:8px;text-align:center;">${otp}</div><p>This OTP is valid for 15 minutes.</p><p style="color:#666;font-size:12px;">If you didn't request this, please ignore this email.</p></div>`
+                });
+            } catch (e) {
+                console.error("Failed to send OTP email:", e.message);
+            }
+        }
+        res.json({ message: "OTP sent to your email. Please check your inbox.", otpSent: true });
+    } catch (error) {
+        console.error("Forgot password failed:", error.message);
+        res.status(503).json({ error: "Could not process request" });
+    }
+});
+
+app.post("/auth/verify-otp", async (req, res) => {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const otp = String(req.body?.otp || "").trim();
+    if (!email || !email.includes("@") || !otp || otp.length !== 6) {
+        return res.status(400).json({ error: "Valid email and 6-digit OTP are required" });
+    }
+    try {
+        await databaseReady;
+        await passwordResetReady;
+        const [rows] = await db.promise().query(
+            "SELECT id, user_id FROM password_resets WHERE email = ? AND otp = ? AND expires_at > NOW() AND used = FALSE ORDER BY created_at DESC LIMIT 1",
+            [email, otp]
+        );
+        if (!rows.length) return res.status(400).json({ error: "Invalid or expired OTP" });
+        const reset = rows[0];
+        await db.promise().query("UPDATE password_resets SET used = TRUE WHERE id = ?", [reset.id]);
+        res.json({ success: true, userId: reset.user_id, message: "OTP verified successfully" });
+    } catch (error) {
+        console.error("OTP verification failed:", error.message);
+        res.status(503).json({ error: "Could not verify OTP" });
+    }
+});
+
+app.post("/auth/reset-password", async (req, res) => {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const otp = String(req.body?.otp || "").trim();
+    const newPassword = String(req.body?.password || "");
+    if (!email || !email.includes("@") || !otp || otp.length !== 6 || newPassword.length < 6) {
+        return res.status(400).json({ error: "Valid email, 6-digit OTP, and password (min 6 chars) are required" });
+    }
+    try {
+        await databaseReady;
+        await passwordResetReady;
+        const [rows] = await db.promise().query(
+            "SELECT id, user_id FROM password_resets WHERE email = ? AND otp = ? AND expires_at > NOW() AND used = TRUE ORDER BY created_at DESC LIMIT 1",
+            [email, otp]
+        );
+        if (!rows.length) return res.status(400).json({ error: "Invalid or expired OTP" });
+        const reset = rows[0];
+        await db.promise().query("UPDATE users SET password_hash = ? WHERE id = ?", [hashPassword(newPassword), reset.user_id]);
+        await db.promise().query("DELETE FROM password_resets WHERE user_id = ?", [reset.user_id]);
+        res.json({ success: true, message: "Password reset successfully" });
+    } catch (error) {
+        console.error("Password reset failed:", error.message);
+        res.status(503).json({ error: "Could not reset password" });
+    }
+});
+
+app.get("/auth/me", async (req, res) => {
+    const userId = Number(req.query.userId);
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    try {
+        await databaseReady;
+        await profilesReady;
+        const [[user]] = await db.promise().query("SELECT id, name, email, created_at FROM users WHERE id = ?", [userId]);
+        if (!user) return res.status(404).json({ error: "User not found" });
+        const [[profile]] = await db.promise().query("SELECT phone, address, city, district, state, country, pin FROM user_profiles WHERE user_id = ?", [userId]);
+        res.json({ user, profile: profile || {} });
+    } catch (error) {
+        console.error("Profile fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load profile" });
+    }
+});
+
+app.patch("/auth/me", async (req, res) => {
+    const body = req.body || {};
+    const userId = Number(body.userId);
+    const name = String(body.name || "").trim();
+    const phone = String(body.phone || "").trim();
+    const address = String(body.address || "").trim();
+    const city = String(body.city || "").trim();
+    const district = String(body.district || "").trim();
+    const state = String(body.state || "").trim();
+    const country = String(body.country || "").trim();
+    const pin = String(body.pin || "").trim();
+    if (!Number.isInteger(userId) || userId < 1 || !name) return res.status(400).json({ error: "Valid user id and name are required" });
+    try {
+        await databaseReady;
+        await profilesReady;
+        await db.promise().query("UPDATE users SET name = ? WHERE id = ?", [name, userId]);
+        await db.promise().query(
+            "INSERT INTO user_profiles (user_id, phone, address, city, district, state, country, pin) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE phone = VALUES(phone), address = VALUES(address), city = VALUES(city), district = VALUES(district), state = VALUES(state), country = VALUES(country), pin = VALUES(pin)",
+            [userId, phone || null, address || null, city || null, district || null, state || null, country || null, pin || null]
+        );
+        const [[user]] = await db.promise().query("SELECT id, name, email, created_at FROM users WHERE id = ?", [userId]);
+        const [[profile]] = await db.promise().query("SELECT phone, address, city, district, state, country, pin FROM user_profiles WHERE user_id = ?", [userId]);
+        res.json({ user, profile: profile || {} });
+    } catch (error) {
+        console.error("Profile update failed:", error.message);
+        res.status(503).json({ error: "Could not update profile" });
+    }
+});
+
+function requireAdmin(req, res, next) {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token || (!adminTokens.has(token) && !supportAdminTokens.has(token))) return res.status(401).json({ error: "Admin authentication required" });
+    next();
+}
+
+async function createUserNotification(userId, message) {
+    const id = Number(userId);
+    if (!Number.isInteger(id) || id < 1 || !message) return;
+    await notificationsReady;
+    await db.promise().query(
+        "INSERT INTO user_notifications (user_id, message) VALUES (?, ?)",
+        [id, String(message).slice(0, 500)]
+    );
+}
+
+async function createUserNotificationByEmail(email, message) {
+    await databaseReady;
+    const [[user]] = await db.promise().query("SELECT id FROM users WHERE email = ?", [String(email || "").trim().toLowerCase()]);
+    if (user) await createUserNotification(user.id, message);
+}
+
+app.get("/notifications", async (req, res) => {
+    const userId = Number(req.query.userId);
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    try {
+        await notificationsReady;
+        const [rows] = await db.promise().query(
+            "SELECT id, message, created_at FROM user_notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
+            [userId]
+        );
+        res.json(rows);
+    } catch (error) {
+        console.error("User notifications fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load notifications" });
+    }
+});
+
+// Broadcast notification to all users (admin only)
+app.post("/admin/notifications/broadcast", requireAdmin, async (req, res) => {
+    const { message } = req.body;
+    if (!message || !String(message).trim()) return res.status(400).json({ error: "Message is required" });
+    try {
+        await notificationsReady;
+        await databaseReady;
+        const [users] = await db.promise().query("SELECT id FROM users");
+        if (users.length === 0) return res.json({ sent: 0 });
+        const values = users.map(u => [u.id, String(message).slice(0, 500)]);
+        const placeholders = values.map(() => "(?, ?)").join(", ");
+        const flatValues = values.flat();
+        await db.promise().query(
+            `INSERT INTO user_notifications (user_id, message) VALUES ${placeholders}`,
+            flatValues
+        );
+        res.json({ sent: users.length, message: `Notification sent to ${users.length} users` });
+    } catch (error) {
+        console.error("Broadcast notification failed:", error.message);
+        res.status(503).json({ error: "Could not send notification" });
+    }
+});
+
+// Clear all notifications for a user
+app.delete("/notifications", async (req, res) => {
+    const userId = Number(req.query.userId);
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    try {
+        await notificationsReady;
+        await db.promise().query("DELETE FROM user_notifications WHERE user_id = ?", [userId]);
+        res.json({ success: true, message: "All notifications cleared" });
+    } catch (error) {
+        console.error("Clear notifications failed:", error.message);
+        res.status(503).json({ error: "Could not clear notifications" });
+    }
+});
+
+app.get("/admin/customers", requireAdmin, async (req, res) => {
+    try {
+        await databaseReady;
+        await profilesReady;
+        const [customers] = await db.promise().query(`
+            SELECT u.id, u.name, u.email, u.created_at, p.phone, p.address, p.city, p.district, p.state, p.country, p.pin
+            FROM users u
+            LEFT JOIN user_profiles p ON p.user_id = u.id
+            ORDER BY u.created_at DESC
+        `);
+        res.json(customers);
+    } catch (error) {
+        console.error("Admin customers fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load customers" });
+    }
+});
+
+app.get("/admin/orders", requireAdmin, async (req, res) => {
+    try {
+        await databaseReady;
+        await ordersReady;
+        const [orders] = await db.promise().query(`
+            SELECT o.id, o.user_id, u.name as user_name, u.email as user_email, o.items, o.address, o.delivery_charge, o.status, o.created_at
+            FROM orders o
+            JOIN users u ON u.id = o.user_id
+            ORDER BY o.created_at DESC
+        `);
+        res.json(orders);
+    } catch (error) {
+        console.error("Admin orders fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load orders" });
+    }
+});
+
+app.patch("/admin/orders/:id/status", requireAdmin, async (req, res) => {
+    const id = String(req.params.id || "").trim();
+    const status = String(req.body?.status || "").trim();
+    const allowed = ["placed", "packed", "shipped", "out_for_delivery", "delivered", "processing", "cancelled", "returned"];
+    if (!id || !allowed.includes(status)) return res.status(400).json({ error: "Valid order id and status are required" });
+    try {
+        await ordersReady;
+        const [[order]] = await db.promise().query("SELECT user_id FROM orders WHERE id = ?", [id]);
+        if (!order) return res.status(404).json({ error: "Order not found" });
+        const [result] = await db.promise().query("UPDATE orders SET status = ? WHERE id = ?", [status, id]);
+        if (!result.affectedRows) return res.status(404).json({ error: "Order not found" });
+        await createUserNotification(order.user_id, `Order ${id} status updated to ${status}.`);
+        res.json({ id, status });
+    } catch (error) {
+        console.error("Order status update failed:", error.message);
+        res.status(503).json({ error: "Could not update order status" });
+    }
+});
+
+app.get("/admin/orders/:id", requireAdmin, async (req, res) => {
+    const id = String(req.params.id || "").trim();
+    if (!id) return res.status(400).json({ error: "Valid order id is required" });
+    try {
+        await databaseReady;
+        await ordersReady;
+        const [[order]] = await db.promise().query(`
+            SELECT o.id, o.user_id, u.name as user_name, u.email as user_email, u.phone as user_phone,
+                 o.items, o.address, o.delivery_charge, o.Total_Amount, o.status, o.product_ids, o.created_at
+            FROM orders o
+            JOIN users u ON u.id = o.user_id
+            WHERE o.id = ?
+        `, [id]);
+        if (!order) return res.status(404).json({ error: "Order not found" });
+        res.json({
+            id: order.id,
+            user_id: order.user_id,
+            user_name: order.user_name,
+            user_email: order.user_email,
+            user_phone: order.user_phone,
+            items: Number(order.items) || 0,
+            address: order.address,
+            delivery_charge: Number(order.delivery_charge) || 0,
+            total_amount: Number(order.Total_Amount) || 0,
+            status: order.status,
+            productIds: parseProductIds(order.product_ids),
+            created_at: order.created_at
+        });
+    } catch (error) {
+        console.error("Admin order detail fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load order" });
+    }
+});
+
+app.delete("/admin/orders/:id", requireAdmin, async (req, res) => {
+    const id = String(req.params.id || "").trim();
+    if (!id) return res.status(400).json({ error: "Valid order id is required" });
+    try {
+        await ordersReady;
+        const [result] = await db.promise().query("DELETE FROM orders WHERE id = ?", [id]);
+        if (!result.affectedRows) return res.status(404).json({ error: "Order not found" });
+        res.json({ id, deleted: true });
+    } catch (error) {
+        console.error("Admin order delete failed:", error.message);
+        res.status(503).json({ error: "Could not delete order" });
+    }
+});
+
+app.delete("/orders/:id", async (req, res) => {
+    const id = String(req.params.id || "").trim();
+    const userId = Number(req.body?.userId);
+    if (!id) return res.status(400).json({ error: "Valid order id is required" });
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    try {
+        await ordersReady;
+        const [result] = await db.promise().query("DELETE FROM orders WHERE id = ? AND user_id = ?", [id, userId]);
+        if (!result.affectedRows) return res.status(404).json({ error: "Order not found or not owned by this user" });
+        await createUserNotification(userId, `Order ${id} was cancelled.`);
+        res.json({ id, deleted: true });
+    } catch (error) {
+        console.error("Order deletion failed:", error.message);
+        res.status(503).json({ error: "Could not delete order" });
+    }
+});
+
+app.delete("/admin/orders", requireAdmin, async (req, res) => {
+    try {
+        await ordersReady;
+        const [result] = await db.promise().query("DELETE FROM orders");
+        res.json({ deleted: result.affectedRows || 0 });
+    } catch (error) {
+        console.error("Admin bulk order delete failed:", error.message);
+        res.status(503).json({ error: "Could not delete orders" });
+    }
+});
+
+app.get("/orders", async (req, res) => {
+    const userId = Number(req.query.userId);
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    try {
+        await ordersReady;
+        const [rows] = await db.promise().query(
+            "SELECT id, user_id, items, address, delivery_charge, Total_Amount, status, product_ids, coupon_code, coupon_discount, discount, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC",
+            [userId]
+        );
+        res.json(rows.map((row) => ({
+            id: row.id,
+            userId: row.user_id,
+            items: row.items,
+            address: row.address,
+            deliveryCharge: Number(row.delivery_charge) || 0,
+            totalAmount: Number(row.Total_Amount) || 0,
+            status: row.status || "placed",
+            couponCode: row.coupon_code || null,
+            couponDiscount: Number(row.coupon_discount) || 0,
+            discount: Number(row.discount) || 0,
+            productIds: parseProductIds(row.product_ids),
+            createdAt: row.created_at
+        })));
+    } catch (error) {
+        console.error("Fetch user orders failed:", error.message);
+        res.status(503).json({ error: "Could not load orders" });
+    }
+});
+
+app.patch("/orders/:id", async (req, res) => {
+    const id = String(req.params.id || "").trim();
+    const body = req.body || {};
+    const userId = Number(body.userId);
+    const address = String(body.address || "").trim();
+    const returnRequested = !!body.returnRequested;
+    if (!id || !Number.isInteger(userId) || userId < 1 || (!address && !returnRequested)) return res.status(400).json({ error: "Valid order id, user id, and address are required" });
+    try {
+        await ordersReady;
+        const [[order]] = await db.promise().query("SELECT id, user_id FROM orders WHERE id = ?", [id]);
+        if (!order) return res.status(404).json({ error: "Order not found" });
+        if (order.user_id !== userId) return res.status(403).json({ error: "You can only update your own orders" });
+        if (returnRequested) {
+            await db.promise().query("UPDATE orders SET status = ? WHERE id = ?", ["returned", id]);
+            await createUserNotification(userId, `Return requested for order ${id}.`);
+            res.json({ id, status: "returned" });
+        } else {
+            await db.promise().query("UPDATE orders SET address = ? WHERE id = ?", [address, id]);
+            res.json({ id, address });
+        }
+    } catch (error) {
+        console.error("Order update failed:", error.message);
+        res.status(503).json({ error: "Could not update order" });
+    }
+    
+});
+
+app.get("/orders/:id/invoice", async (req, res) => {
+    const id = String(req.params.id || "").trim();
+    const userId = Number(req.query.userId);
+    if (!id || !Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid order id and user id are required" });
+    try {
+        await ordersReady;
+        const [[order]] = await db.promise().query(
+            "SELECT id, user_id, items, address, delivery_charge, Total_Amount, status, product_ids, coupon_code, coupon_discount, discount, created_at FROM orders WHERE id = ?",
+            [id]
+        );
+        if (!order) return res.status(404).json({ error: "Order not found" });
+        if (order.user_id !== userId) return res.status(403).json({ error: "You can only access your own invoices" });
+
+        const [[user]] = await db.promise().query("SELECT name, email FROM users WHERE id = ?", [userId]);
+        if (!user) return res.status(404).json({ error: "User not found" });
+
+        const productIds = parseProductIds(order.product_ids);
+        let productDetails = [];
+        if (productIds.length) {
+            const [products] = await db.promise().query(
+                "SELECT id, name, price, discount, image FROM products WHERE id IN (?)",
+                [productIds]
+            );
+            productDetails = products;
+        }
+
+        const formatPrice = (value) => `Rs.${Number(value || 0).toLocaleString("en-IN")}`;
+
+        const invoiceData = {
+            orderId: order.id,
+            orderDate: new Date(order.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+            customerName: user.name,
+            customerEmail: user.email,
+            address: order.address,
+            items: order.items,
+            productDetails,
+            subtotal: Number(order.Total_Amount) - Number(order.delivery_charge) + Number(order.discount || 0),
+            discount: Number(order.discount || order.coupon_discount || 0),
+            deliveryCharge: Number(order.delivery_charge || 0),
+            totalAmount: Number(order.Total_Amount || 0),
+            couponCode: order.coupon_code || null,
+            status: order.status || "placed"
+        };
+
+        res.json(invoiceData);
+    } catch (error) {
+        console.error("Invoice fetch failed:", error.message);
+        res.status(503).json({ error: "Could not generate invoice" });
+    }
+});
+
+function saveUploadedImage(imageData) {
+    const match = /^data:(image\/(?:jpeg|png|gif|webp));base64,([A-Za-z0-9+/=]+)$/.exec(imageData);
+    if (!match) return null;
+    const imageBuffer = Buffer.from(match[2], "base64");
+    if (imageBuffer.length > 5 * 1024 * 1024) throw new Error("Image must be 5 MB or smaller");
+    const extension = match[1].split("/")[1].replace("jpeg", "jpg");
+    const filename = `${crypto.randomBytes(12).toString("hex")}.${extension}`;
+    fs.writeFileSync(path.join(uploadDirectory, filename), imageBuffer);
+    return `/images/uploads/${filename}`;
+}
+
+app.post("/admin/login", async (req, res) => {
+    const body = req.body || {};
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "");
+    const adminEmail = String(process.env.ADMIN_EMAIL || "admin@sriramstore.local").toLowerCase();
+    const adminPassword = String(process.env.ADMIN_PASSWORD || "admin123");
+
+    if (email === adminEmail && password === adminPassword) {
+        const token = crypto.randomBytes(32).toString("hex");
+        adminTokens.add(token);
+        return res.json({ token });
+    }
+
+    const supportAdminEmail = String(process.env.SUPPORT_ADMIN_EMAIL || "support@sriramstore.local").toLowerCase();
+    const supportAdminPassword = String(process.env.SUPPORT_ADMIN_PASSWORD || "support123");
+    if (email === supportAdminEmail && password === supportAdminPassword) {
+        const token = crypto.randomBytes(32).toString("hex");
+        supportAdminTokens.add(token);
+        return res.json({ token });
+    }
+
+    try {
+        await databaseReady;
+        const [rows] = await db.promise().query("SELECT id, name, email, password_hash FROM users WHERE email = ?", [email]);
+        if (!rows.length || !verifyPassword(password, rows[0].password_hash)) {
+            return res.status(401).json({ error: "Invalid credentials" });
+        }
+        res.json({ user: { id: rows[0].id, name: rows[0].name, email: rows[0].email } });
+    } catch (error) {
+        console.error("Admin login fallback failed:", error.message);
+        res.status(503).json({ error: "Login failed" });
+    }
+});
+
+app.post("/admin/products", requireAdmin, async (req, res) => {
+    const body = req.body || {};
+    const name = String(body.name || "").trim();
+    const price = Number(body.price);
+    const category = String(body.category || "").trim();
+    let image = String(body.image || "").trim() || null;
+    const description = String(body.description || "").trim() || null;
+    const stock = Number(body.stock);
+    const discount = Number(body.discount || 0);
+    const productIds = Array.isArray(body.productIds) ? body.productIds.map(Number).filter((id) => Number.isInteger(id) && id > 0) : [];
+    const expiry = body.expiry ? String(body.expiry).trim() : null;
+    if (!name || !Number.isFinite(price) || price < 0 || !category || !Number.isInteger(stock) || stock < 0 || !Number.isFinite(discount) || discount < 0 || discount > 100) return res.status(400).json({ error: "Enter valid product, stock, and discount values" });
+    try {
+        await inventoryReady;
+        if (image?.startsWith("data:")) image = saveUploadedImage(image);
+        const [result] = await db.promise().query("INSERT INTO products (name, price, category, image, description, stock, discount, expiry) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [name, price, category, image, description, stock, discount, expiry]);
+        res.status(201).json({ id: result.insertId, name, price, category, image, description, stock, discount, expiry });
+    } catch (error) {
+        console.error("Admin product creation failed:", error.message);
+        res.status(503).json({ error: "Could not add product" });
+    }
+});
+
+app.delete("/admin/products/:id", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid product id" });
+    try {
+        const [result] = await db.promise().query("DELETE FROM products WHERE id = ?", [id]);
+        if (!result.affectedRows) return res.status(404).json({ error: "Product not found" });
+        res.json({ deleted: true });
+    } catch (error) {
+        console.error("Admin product deletion failed:", error.message);
+        res.status(503).json({ error: "Could not delete product" });
+    }
+});
+
+app.patch("/admin/products/:id/stock", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    const stock = Number(req.body?.stock);
+    const discount = Number(req.body?.discount || 0);
+    const expiry = req.body?.expiry ? String(req.body.expiry).trim() : null;
+    if (!Number.isInteger(id) || id < 1 || !Number.isInteger(stock) || stock < 0 || !Number.isFinite(discount) || discount < 0 || discount > 100) {
+        return res.status(400).json({ error: "Stock must be whole and discount must be between 0 and 100" });
+    }
+    try {
+        await inventoryReady;
+        const [result] = await db.promise().query("UPDATE products SET stock = ?, discount = ?, expiry = ? WHERE id = ?", [stock, discount, expiry, id]);
+        if (!result.affectedRows) return res.status(404).json({ error: "Product not found" });
+        res.json({ id, stock, discount, expiry });
+    } catch (error) {
+        console.error("Stock update failed:", error.message);
+        res.status(503).json({ error: "Could not update stock" });
+    }
+});
+
+app.get("/admin/coupons", requireAdmin, async (req, res) => {
+    try {
+        await couponsReady;
+        const [coupons] = await db.promise().query("SELECT code, discount_percent, min_order_amount, max_uses, used_count, expires_at, is_active, created_at FROM coupons ORDER BY created_at DESC");
+        res.json(coupons);
+    } catch (error) {
+        console.error("Coupons fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load coupons" });
+    }
+});
+
+app.post("/admin/coupons", requireAdmin, async (req, res) => {
+    const body = req.body || {};
+    const code = String(body.code || "").trim().toUpperCase();
+    const discountPercent = Number(body.discountPercent);
+    const minOrderAmount = Number(body.minOrderAmount || 0);
+    const maxUses = body.maxUses ? Number(body.maxUses) : null;
+    const expiresAt = body.expiresAt ? String(body.expiresAt).trim() : null;
+    const isActive = body.isActive ? 1 : 0;
+    if (!code || !Number.isFinite(discountPercent) || discountPercent <= 0 || discountPercent > 100) {
+        return res.status(400).json({ error: "Valid coupon code and discount percent (0-100) are required" });
+    }
+    if (minOrderAmount < 0) {
+        return res.status(400).json({ error: "Minimum order amount cannot be negative" });
+    }
+    try {
+        await couponsReady;
+        await db.promise().query(
+            "INSERT INTO coupons (code, discount_percent, min_order_amount, max_uses, expires_at, is_active) VALUES (?, ?, ?, ?, ?, ?)",
+            [code, discountPercent, minOrderAmount, maxUses, expiresAt, isActive]
+        );
+        res.status(201).json({ code, discount_percent: discountPercent, min_order_amount: minOrderAmount, max_uses: maxUses, expires_at: expiresAt, is_active: isActive });
+    } catch (error) {
+        if (error.code === "ER_DUP_ENTRY") return res.status(409).json({ error: "This coupon code already exists" });
+        console.error("Coupon creation failed:", error.message);
+        res.status(503).json({ error: "Could not create coupon" });
+    }
+});
+
+app.delete("/admin/coupons/:code", requireAdmin, async (req, res) => {
+    const code = String(req.params.code || "").trim().toUpperCase();
+    if (!code) return res.status(400).json({ error: "Coupon code is required" });
+    try {
+        await couponsReady;
+        const [result] = await db.promise().query("DELETE FROM coupons WHERE code = ?", [code]);
+        if (!result.affectedRows) return res.status(404).json({ error: "Coupon not found" });
+        res.json({ deleted: true });
+    } catch (error) {
+        console.error("Coupon deletion failed:", error.message);
+        res.status(503).json({ error: "Could not delete coupon" });
+    }
+});
+
+app.get("/coupons", async (req, res) => {
+    try {
+        await couponsReady;
+        const [coupons] = await db.promise().query("SELECT code, discount_percent, min_order_amount, max_uses, used_count, expires_at, is_active FROM coupons WHERE is_active = 1 AND (expires_at IS NULL OR expires_at > NOW())");
+        res.json(coupons);
+    } catch (error) {
+        console.error("Coupons list fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load coupons" });
+    }
+});
+
+app.get("/coupons/:code", async (req, res) => {
+    const code = String(req.params.code || "").trim().toUpperCase();
+    if (!code) return res.status(400).json({ error: "Coupon code is required" });
+    try {
+        await couponsReady;
+        const [[coupon]] = await db.promise().query("SELECT code, discount_percent, min_order_amount, max_uses, used_count, expires_at, is_active FROM coupons WHERE code = ?", [code]);
+        if (!coupon) return res.status(404).json({ error: "Invalid coupon code" });
+        if (!coupon.is_active) return res.status(404).json({ error: "This coupon is inactive" });
+        if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) return res.status(404).json({ error: "This coupon has expired" });
+        if (coupon.max_uses && coupon.used_count >= coupon.max_uses) return res.status(404).json({ error: "This coupon has reached its usage limit" });
+        res.json(coupon);
+    } catch (error) {
+        console.error("Coupon validation failed:", error.message);
+        res.status(503).json({ error: "Could not validate coupon" });
+    }
+});
+
+// Referral System API
+const REFERRAL_REWARD = 100; // ₹100 reward for referrer
+const REFEREE_DISCOUNT = 50; // ₹50 discount for referee
+
+// Generate unique referral code
+function generateReferralCode(userId) {
+    const prefix = "SRI";
+    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return `${prefix}${userId}${random}`;
+}
+
+// Get or create user referral code
+app.get("/referral/code", async (req, res) => {
+    const user = JSON.parse(req.headers["x-user"] || "null");
+    if (!user?.id) return res.status(401).json({ error: "Authentication required" });
+    try {
+        await referralsReady;
+        const [[existing]] = await db.promise().query("SELECT referral_code FROM user_referral_codes WHERE user_id = ?", [user.id]);
+        if (existing) {
+            return res.json({ referralCode: existing.referral_code });
+        }
+        // Create new code
+        let code = generateReferralCode(user.id);
+        let attempts = 0;
+        while (attempts < 5) {
+            try {
+                await db.promise().query("INSERT INTO user_referral_codes (user_id, referral_code) VALUES (?, ?)", [user.id, code]);
+                break;
+            } catch (e) {
+                if (e.code === "ER_DUP_ENTRY") {
+                    code = generateReferralCode(user.id);
+                    attempts++;
+                } else throw e;
+            }
+        }
+        res.json({ referralCode: code });
+    } catch (error) {
+        console.error("Referral code fetch failed:", error.message);
+        res.status(503).json({ error: "Could not get referral code" });
+    }
+});
+
+// Get referral stats
+app.get("/referral/stats", async (req, res) => {
+    const user = JSON.parse(req.headers["x-user"] || "null");
+    if (!user?.id) return res.status(401).json({ error: "Authentication required" });
+    try {
+        await referralsReady;
+        const [[stats]] = await db.promise().query("SELECT total_referrals, successful_referrals, total_rewards_earned FROM user_referral_codes WHERE user_id = ?", [user.id]);
+        const [referrals] = await db.promise().query(
+            "SELECT r.id, r.referee_id, u.name as referee_name, r.status, r.reward_given, r.created_at FROM referrals r JOIN users u ON r.referee_id = u.id WHERE r.referrer_id = ? ORDER BY r.created_at DESC",
+            [user.id]
+        );
+        res.json({ stats: stats || { total_referrals: 0, successful_referrals: 0, total_rewards_earned: 0 }, referrals });
+    } catch (error) {
+        console.error("Referral stats failed:", error.message);
+        res.status(503).json({ error: "Could not load referral stats" });
+    }
+});
+
+// Apply referral code (when new user signs up)
+app.post("/referral/apply", async (req, res) => {
+    const { referralCode } = req.body;
+    const user = JSON.parse(req.headers["x-user"] || "null");
+    if (!user?.id) return res.status(401).json({ error: "Authentication required" });
+    if (!referralCode) return res.status(400).json({ error: "Referral code required" });
+    try {
+        await referralsReady;
+        // Find referrer by code
+        const [[referrerCode]] = await db.promise().query("SELECT user_id FROM user_referral_codes WHERE referral_code = ?", [referralCode.toUpperCase()]);
+        if (!referrerCode) return res.status(404).json({ error: "Invalid referral code" });
+        const referrerId = referrerCode.user_id;
+        if (referrerId === user.id) return res.status(400).json({ error: "Cannot use your own referral code" });
+        // Check if already referred
+        const [[existing]] = await db.promise().query("SELECT id FROM referrals WHERE referee_id = ?", [user.id]);
+        if (existing) return res.status(400).json({ error: "You have already used a referral code" });
+        // Create referral record
+        await db.promise().query("INSERT INTO referrals (referrer_id, referee_id, referral_code) VALUES (?, ?, ?)", [referrerId, user.id, referralCode.toUpperCase()]);
+        // Update referrer stats
+        await db.promise().query("UPDATE user_referral_codes SET total_referrals = total_referrals + 1 WHERE user_id = ?", [referrerId]);
+        res.json({ success: true, message: "Referral code applied! You get ₹50 off your first order." });
+    } catch (error) {
+        console.error("Referral apply failed:", error.message);
+        res.status(503).json({ error: "Could not apply referral code" });
+    }
+});
+
+// Complete referral (when referee places first order)
+app.post("/referral/complete", async (req, res) => {
+    const user = JSON.parse(req.headers["x-user"] || "null");
+    if (!user?.id) return res.status(401).json({ error: "Authentication required" });
+    try {
+        await referralsReady;
+        const [[referral]] = await db.promise().query("SELECT id, referrer_id FROM referrals WHERE referee_id = ? AND status = 'pending'", [user.id]);
+        if (!referral) return res.json({ success: false, message: "No pending referral" });
+        // Update referral status
+        await db.promise().query("UPDATE referrals SET status = 'completed', completed_at = NOW(), reward_given = 1 WHERE id = ?", [referral.id]);
+        // Update referrer stats and give reward
+        await db.promise().query("UPDATE user_referral_codes SET successful_referrals = successful_referrals + 1, total_rewards_earned = total_rewards_earned + ? WHERE user_id = ?", [REFERRAL_REWARD, referral.referrer_id]);
+        // TODO: Add reward to referrer's wallet/points
+        res.json({ success: true, reward: REFERRAL_REWARD });
+    } catch (error) {
+        console.error("Referral complete failed:", error.message);
+        res.status(503).json({ error: "Could not complete referral" });
+    }
+});
+
+// Validate referral code for discount
+app.get("/referral/validate/:code", async (req, res) => {
+    const code = String(req.params.code || "").trim().toUpperCase();
+    if (!code) return res.status(400).json({ error: "Code required" });
+    try {
+        await referralsReady;
+        const [[referrerCode]] = await db.promise().query("SELECT user_id FROM user_referral_codes WHERE referral_code = ?", [code]);
+        if (!referrerCode) return res.status(404).json({ valid: false, error: "Invalid code" });
+        res.json({ valid: true, discount: REFEREE_DISCOUNT, message: `Valid code! Get ₹${REFEREE_DISCOUNT} off your first order.` });
+    } catch (error) {
+        console.error("Referral validate failed:", error.message);
+        res.status(503).json({ error: "Could not validate code" });
+    }
+});
+
+app.get("/admin/festivals", requireAdmin, async (req, res) => {
+    try {
+        await festivalsReady;
+        const [rows] = await db.promise().query("SELECT id, name, image_url, created_at FROM festivals ORDER BY name ASC");
+        res.json(rows);
+    } catch (error) {
+        console.error("Festivals fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load festivals" });
+    }
+});
+
+app.post("/admin/festivals", requireAdmin, async (req, res) => {
+    const name = String(req.body?.name || "").trim();
+    const imageUrl = String(req.body?.imageUrl || "").trim() || null;
+    if (!name) return res.status(400).json({ error: "Festival name is required" });
+    try {
+        await festivalsReady;
+        const [result] = await db.promise().query("INSERT INTO festivals (name, image_url) VALUES (?, ?)", [name, imageUrl]);
+        res.status(201).json({ id: result.insertId, name, image_url: imageUrl });
+    } catch (error) {
+        if (error.code === "ER_DUP_ENTRY") return res.status(409).json({ error: "A festival with this name already exists" });
+        console.error("Festival creation failed:", error.message);
+        res.status(503).json({ error: "Could not create festival" });
+    }
+});
+
+app.delete("/admin/festivals/:id", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid festival id" });
+    try {
+        await festivalsReady;
+        const [result] = await db.promise().query("DELETE FROM festivals WHERE id = ?", [id]);
+        if (!result.affectedRows) return res.status(404).json({ error: "Festival not found" });
+        res.json({ deleted: true });
+    } catch (error) {
+        console.error("Festival deletion failed:", error.message);
+        res.status(503).json({ error: "Could not delete festival" });
+    }
+});
+
+async function loadOffer(id) {
+    const [[offer]] = await db.promise().query(
+        "SELECT id, festival_id, name, coupon_code, discount_percent, min_order_amount, start_date, end_date, is_active, image_url, created_at FROM offers WHERE id = ?",
+        [id]
+    );
+    if (!offer) return null;
+    let festivalImageUrl = null;
+    if (offer.festival_id) {
+        const [[festival]] = await db.promise().query(
+            "SELECT image_url FROM festivals WHERE id = ?",
+            [offer.festival_id]
+        );
+        festivalImageUrl = festival?.image_url || null;
+    }
+    const [products] = await db.promise().query(
+        `SELECT op.product_id, p.name FROM offer_products op JOIN products p ON p.id = op.product_id WHERE op.offer_id = ? ORDER BY p.name`,
+        [id]
+    );
+    const [categories] = await db.promise().query(
+        `SELECT category FROM offer_categories WHERE offer_id = ? ORDER BY category`,
+        [id]
+    );
+    return {
+        id: offer.id,
+        festival_id: offer.festival_id,
+        name: offer.name,
+        coupon_code: offer.coupon_code,
+        discount_percent: Number(offer.discount_percent),
+        min_order_amount: Number(offer.min_order_amount),
+        start_date: offer.start_date ? new Date(offer.start_date).toISOString().slice(0, 10) : null,
+        end_date: offer.end_date ? new Date(offer.end_date).toISOString().slice(0, 10) : null,
+        is_active: !!offer.is_active,
+        image_url: offer.image_url || festivalImageUrl,
+        festival_image_url: festivalImageUrl,
+        product_ids: products.map((p) => p.product_id),
+        product_names: products.map((p) => p.name),
+        categories: categories.map((c) => c.category)
+    };
+}
+
+async function syncOfferCoupon(offerId, oldCouponCode = null) {
+    const offer = await loadOffer(offerId);
+    if (!offer) return;
+
+    const newCouponCode = offer.coupon_code;
+
+    if (oldCouponCode && oldCouponCode !== newCouponCode) {
+        await db.promise().query("DELETE FROM coupons WHERE code = ?", [oldCouponCode]);
+    }
+
+    if (newCouponCode) {
+        await db.promise().query(
+            `INSERT INTO coupons (code, discount_percent, min_order_amount, is_active)
+             VALUES (?, ?, ?, 1)
+             ON DUPLICATE KEY UPDATE discount_percent = VALUES(discount_percent), min_order_amount = VALUES(min_order_amount), is_active = 1`,
+            [newCouponCode, offer.discount_percent, offer.min_order_amount]
+        );
+    }
+}
+
+app.get("/offers", async (req, res) => {
+    try {
+        await offersReady;
+        const [rows] = await db.promise().query(`
+            SELECT o.id, o.festival_id, f.name AS festival_name, o.name, o.coupon_code,
+                   o.discount_percent, o.min_order_amount, o.start_date, o.end_date, o.is_active, o.created_at
+            FROM offers o
+            LEFT JOIN festivals f ON f.id = o.festival_id
+            WHERE o.is_active = 1
+              AND (o.start_date IS NULL OR o.start_date <= CURDATE())
+              AND (o.end_date IS NULL OR o.end_date >= CURDATE())
+            ORDER BY o.created_at DESC
+        `);
+        const enriched = await Promise.all(rows.map(async (r) => {
+            const full = await loadOffer(r.id);
+            return full || r;
+        }));
+        res.json(enriched);
+    } catch (error) {
+        console.error("Offers fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load offers" });
+    }
+});
+
+app.get("/admin/offers", requireAdmin, async (req, res) => {
+    try {
+        await offersReady;
+        const [rows] = await db.promise().query(`
+            SELECT o.id, o.festival_id, f.name AS festival_name, o.name, o.coupon_code,
+                   o.discount_percent, o.min_order_amount, o.start_date, o.end_date, o.is_active, o.created_at
+            FROM offers o
+            LEFT JOIN festivals f ON f.id = o.festival_id
+            ORDER BY o.created_at DESC
+        `);
+        const enriched = await Promise.all(rows.map(async (r) => {
+            const full = await loadOffer(r.id);
+            return full || r;
+        }));
+        res.json(enriched);
+    } catch (error) {
+        console.error("Offers fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load offers" });
+    }
+});
+
+app.get("/admin/offers/:id", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid offer id" });
+    try {
+        await offersReady;
+        const offer = await loadOffer(id);
+        if (!offer) return res.status(404).json({ error: "Offer not found" });
+        res.json(offer);
+    } catch (error) {
+        console.error("Offer fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load offer" });
+    }
+});
+
+app.get("/admin/support", requireAdmin, async (req, res) => {
+    try {
+        await supportReady;
+        const status = String(req.query.status || "").trim();
+        const query = status ? "SELECT * FROM support_tickets WHERE status = ? ORDER BY created_at DESC" : "SELECT * FROM support_tickets ORDER BY created_at DESC";
+        const params = status ? [status] : [];
+        const [tickets] = await db.promise().query(query, params);
+        res.json(tickets);
+    } catch (error) {
+        console.error("Admin support fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load support tickets" });
+    }
+});
+
+app.get("/admin/support/:id", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ticket id" });
+    try {
+        await supportReady;
+        const [tickets] = await db.promise().query("SELECT * FROM support_tickets WHERE id = ?", [id]);
+        const ticket = tickets[0];
+        if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+        res.json(ticket);
+    } catch (error) {
+        console.error("Admin support ticket fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load support ticket" });
+    }
+});
+
+app.get("/admin/support/:id/replies", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ticket id" });
+    try {
+        await supportReady;
+        const [replies] = await db.promise().query("SELECT * FROM support_replies WHERE ticket_id = ? ORDER BY created_at ASC", [id]);
+        res.json(replies);
+    } catch (error) {
+        console.error("Admin support replies fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load support replies" });
+    }
+});
+
+app.post("/admin/support/:id/replies", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ticket id" });
+    const message = String(req.body?.message || "").trim();
+    if (!message) return res.status(400).json({ error: "Reply message is required" });
+    try {
+        await supportReady;
+        const [tickets] = await db.promise().query("SELECT * FROM support_tickets WHERE id = ?", [id]);
+        if (!tickets[0]) return res.status(404).json({ error: "Ticket not found" });
+        await db.promise().query("INSERT INTO support_replies (ticket_id, message, is_customer_reply) VALUES (?, ?, ?)", [id, message, false]);
+        await createUserNotificationByEmail(tickets[0].email, `Support replied to ticket #${id}.`);
+        res.status(201).json({ message: "Reply added" });
+    } catch (error) {
+        console.error("Admin support reply failed:", error.message);
+        res.status(503).json({ error: "Could not add reply" });
+    }
+});
+
+app.patch("/admin/support/:id", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ticket id" });
+    const status = String(req.body?.status || "").trim();
+    if (!status) return res.status(400).json({ error: "Status is required" });
+    try {
+        await supportReady;
+        const [result] = await db.promise().query("UPDATE support_tickets SET status = ? WHERE id = ?", [status, id]);
+        if (!result.affectedRows) return res.status(404).json({ error: "Ticket not found" });
+        const [[ticket]] = await db.promise().query("SELECT email FROM support_tickets WHERE id = ?", [id]);
+        if (ticket) await createUserNotificationByEmail(ticket.email, `Support ticket #${id} status updated to ${status}.`);
+        res.json({ message: "Ticket updated" });
+    } catch (error) {
+        console.error("Admin support update failed:", error.message);
+        res.status(503).json({ error: "Could not update ticket" });
+    }
+});
+
+async function replaceOfferTargets(offerId, productIds, categories) {
+    await db.promise().query("DELETE FROM offer_products WHERE offer_id = ?", [offerId]);
+    await db.promise().query("DELETE FROM offer_categories WHERE offer_id = ?", [offerId]);
+    if (Array.isArray(productIds) && productIds.length) {
+        const values = productIds.map((pid) => [offerId, Number(pid)]);
+        await db.promise().query(
+            `INSERT INTO offer_products (offer_id, product_id) VALUES ${values.map(() => "(?, ?)").join(", ")}`,
+            values.flat()
+        );
+    }
+    if (Array.isArray(categories) && categories.length) {
+        const seen = new Set();
+        const values = [];
+        for (const c of categories) {
+            const trimmed = String(c || "").trim();
+            if (!trimmed || seen.has(trimmed)) continue;
+            seen.add(trimmed);
+            values.push([offerId, trimmed]);
+        }
+        if (values.length) {
+            await db.promise().query(
+                `INSERT INTO offer_categories (offer_id, category) VALUES ${values.map(() => "(?, ?)").join(", ")}`,
+                values.flat()
+            );
+        }
+    }
+}
+
+app.post("/admin/offers", requireAdmin, async (req, res) => {
+    const body = req.body || {};
+    const name = String(body.name || "").trim();
+    const discountPercent = Number(body.discountPercent);
+    const festivalId = body.festivalId ? Number(body.festivalId) : null;
+    const couponCode = body.couponCode ? String(body.couponCode).trim().toUpperCase() : null;
+    const minOrderAmount = Number(body.minOrderAmount || 0);
+    const startDate = body.startDate ? String(body.startDate).trim() : null;
+    const endDate = body.endDate ? String(body.endDate).trim() : null;
+    const isActive = body.isActive === false ? 0 : 1;
+    const imageUrl = String(body.imageUrl || "").trim() || null;
+    const productIds = Array.isArray(body.productIds) ? body.productIds.map((v) => Number(v)).filter((v) => Number.isInteger(v) && v > 0) : [];
+    const categories = Array.isArray(body.categories) ? body.categories : [];
+
+    if (!name || !Number.isFinite(discountPercent) || discountPercent <= 0 || discountPercent > 100) {
+        return res.status(400).json({ error: "Valid offer name and discount (0-100) are required" });
+    }
+    if (minOrderAmount < 0) return res.status(400).json({ error: "Minimum order cannot be negative" });
+    if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
+        return res.status(400).json({ error: "End date must be on or after the start date" });
+    }
+    if (!productIds.length && !categories.length) {
+        return res.status(400).json({ error: "Select at least one product or category" });
+    }
+
+    try {
+        await offersReady;
+        if (couponCode) {
+            const [existing] = await db.promise().query("SELECT id FROM offers WHERE coupon_code = ?", [couponCode]);
+            if (existing.length) return res.status(409).json({ error: "This coupon code is already used on another offer" });
+        }
+        const [result] = await db.promise().query(
+            "INSERT INTO offers (festival_id, name, coupon_code, discount_percent, min_order_amount, start_date, end_date, is_active, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [festivalId, name, couponCode, discountPercent, minOrderAmount, startDate || null, endDate || null, isActive, imageUrl]
+        );
+        await replaceOfferTargets(result.insertId, productIds, categories);
+        await syncOfferCoupon(result.insertId);
+        const offer = await loadOffer(result.insertId);
+        res.status(201).json(offer);
+    } catch (error) {
+        console.error("Offer creation failed:", error.message);
+        res.status(503).json({ error: "Could not create offer" });
+    }
+});
+
+app.patch("/admin/offers/:id", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid offer id" });
+    const body = req.body || {};
+    const updates = [];
+    const params = [];
+    const allowedSimple = [
+        ["name", (v) => String(v || "").trim()],
+        ["discountPercent", (v) => Number(v)],
+        ["minOrderAmount", (v) => Number(v)],
+        ["startDate", (v) => v ? String(v).trim() : null],
+        ["endDate", (v) => v ? String(v).trim() : null],
+        ["festivalId", (v) => v ? Number(v) : null]
+    ];
+    for (const [key, transform] of allowedSimple) {
+        if (body[key] !== undefined) {
+            const value = transform(body[key]);
+            if (key === "name" && !value) return res.status(400).json({ error: "Offer name is required" });
+            if (key === "discountPercent" && (!Number.isFinite(value) || value <= 0 || value > 100)) return res.status(400).json({ error: "Discount must be between 0 and 100" });
+            if (key === "minOrderAmount" && value < 0) return res.status(400).json({ error: "Minimum order cannot be negative" });
+            updates.push(`${key === "discountPercent" ? "discount_percent" : key === "minOrderAmount" ? "min_order_amount" : key === "festivalId" ? "festival_id" : key === "startDate" ? "start_date" : key === "endDate" ? "end_date" : key} = ?`);
+            params.push(value);
+        }
+    }
+    let oldCouponCode = null;
+    if (body.couponCode !== undefined) {
+        const code = body.couponCode ? String(body.couponCode).trim().toUpperCase() : null;
+        if (code) {
+            const [dup] = await db.promise().query("SELECT id FROM offers WHERE coupon_code = ? AND id <> ?", [code, id]);
+            if (dup.length) return res.status(409).json({ error: "This coupon code is already used on another offer" });
+        }
+        const [[oldOffer]] = await db.promise().query("SELECT coupon_code FROM offers WHERE id = ?", [id]);
+        oldCouponCode = oldOffer?.coupon_code || null;
+        updates.push("coupon_code = ?");
+        params.push(code);
+    }
+    if (body.imageUrl !== undefined) {
+        const imageUrl = String(body.imageUrl || "").trim() || null;
+        updates.push("image_url = ?");
+        params.push(imageUrl);
+    }
+    if (body.isActive !== undefined) {
+        updates.push("is_active = ?");
+        params.push(body.isActive ? 1 : 0);
+    }
+    try {
+        await offersReady;
+        if (updates.length) {
+            params.push(id);
+            await db.promise().query(`UPDATE offers SET ${updates.join(", ")} WHERE id = ?`, params);
+        }
+        if (body.productIds !== undefined || body.categories !== undefined) {
+            const productIds = Array.isArray(body.productIds) ? body.productIds.map((v) => Number(v)).filter((v) => Number.isInteger(v) && v > 0) : [];
+            const categories = Array.isArray(body.categories) ? body.categories : [];
+            if (!productIds.length && !categories.length) return res.status(400).json({ error: "Select at least one product or category" });
+            await replaceOfferTargets(id, productIds, categories);
+        }
+        await syncOfferCoupon(id, oldCouponCode);
+        const offer = await loadOffer(id);
+        if (!offer) return res.status(404).json({ error: "Offer not found" });
+        res.json(offer);
+    } catch (error) {
+        console.error("Offer update failed:", error.message);
+        res.status(503).json({ error: "Could not update offer" });
+    }
+});
+
+app.delete("/admin/offers/:id", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid offer id" });
+    try {
+        await offersReady;
+        const [[offer]] = await db.promise().query("SELECT coupon_code FROM offers WHERE id = ?", [id]);
+        if (!offer) return res.status(404).json({ error: "Offer not found" });
+        const [result] = await db.promise().query("DELETE FROM offers WHERE id = ?", [id]);
+        if (!result.affectedRows) return res.status(404).json({ error: "Offer not found" });
+        if (offer.coupon_code) {
+            await db.promise().query("DELETE FROM coupons WHERE code = ?", [offer.coupon_code]);
+        }
+        res.json({ deleted: true });
+    } catch (error) {
+        console.error("Offer deletion failed:", error.message);
+        res.status(503).json({ error: "Could not delete offer" });
+    }
+});
+
+app.get("/delivery-charge/:state", async (req, res) => {
+    const state = String(req.params.state || "").trim();
+    if (!state) return res.status(400).json({ error: "State is required" });
+    try {
+        await deliveryChargesReady;
+        const [[charge]] = await db.promise().query("SELECT state, charge, description FROM delivery_charges WHERE state = ?", [state]);
+        if (charge) {
+            res.json({ state: charge.state, delivery_charge: Number(charge.charge), description: charge.description });
+        } else {
+            res.json({ state, delivery_charge: 40, description: "Standard delivery" });
+        }
+    } catch (error) {
+        console.error("Delivery charge lookup failed:", error.message);
+        res.status(503).json({ error: "Could not determine charge" });
+    }
+});
+
+// Haversine formula to calculate distance between two coordinates
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Earth's radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+
+// Helper to make HTTP requests with timeout
+async function httpGet(url) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+        const response = await fetch(url, { signal: controller.signal });
+        return await response.json();
+    } catch (e) {
+        throw e;
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+// Distance-based delivery check by pincode
+app.get("/delivery-check/:pincode", async (req, res) => {
+    const pincode = String(req.params.pincode || "").trim();
+    if (!/^\d{6}$/.test(pincode)) {
+        return res.status(400).json({ error: "Valid 6-digit pincode required" });
+    }
+    try {
+        // Get coordinates for pincode using postal API
+        let data;
+        try {
+            data = await httpGet(`https://api.postalpincode.in/pincode/${pincode}`);
+        } catch (e) {
+            console.error("Postal API error:", e.message);
+            return res.json({ deliverable: false, reason: "Could not reach postal service" });
+        }
+
+        if (!data || !data[0] || data[0].Status !== "Success" || !data[0].PostOffice || data[0].PostOffice.length === 0) {
+            return res.json({ deliverable: false, reason: "Invalid pincode or pincode not found" });
+        }
+
+        const postOffice = data[0].PostOffice[0];
+        const latitude = Number(postOffice.Latitude);
+        const longitude = Number(postOffice.Longitude);
+        const state = postOffice.State || "";
+        const district = postOffice.District || "";
+        const area = postOffice.Name || district;
+
+        // If coordinates available, use distance calculation
+        if (!isNaN(latitude) && !isNaN(longitude)) {
+            const distanceKm = calculateDistance(STORE_LATITUDE, STORE_LONGITUDE, latitude, longitude);
+            const deliverable = distanceKm <= DELIVERY_RADIUS_KM;
+
+            return res.json({
+                deliverable,
+                distanceKm: Math.round(distanceKm * 100) / 100,
+                radiusKm: DELIVERY_RADIUS_KM,
+                pincode,
+                area,
+                district,
+                state,
+                reason: deliverable ? "Within delivery radius" : `Outside delivery radius (${Math.round(distanceKm)} km away)`
+            });
+        }
+
+        // Fallback: Check if state is in our delivery charges table (means we deliver to that state)
+        const dbPromise = db.promise();
+        const [[charge]] = await dbPromise.query("SELECT state, charge FROM delivery_charges WHERE state = ?", [state]);
+        
+        if (charge) {
+            // We have a delivery charge for this state, so it's deliverable
+            return res.json({
+                deliverable: true,
+                distanceKm: 0,
+                radiusKm: DELIVERY_RADIUS_KM,
+                pincode,
+                area,
+                district,
+                state,
+                reason: "Delivery available (state-based)"
+            });
+        }
+
+        // No coordinates and state not in delivery table
+        return res.json({ deliverable: false, reason: "Coordinates not available and state not in delivery area" });
+    } catch (error) {
+        console.error("Delivery check failed:", error.message);
+        res.status(503).json({ error: "Could not check delivery availability" });
+    }
+});
+
+app.post("/test-email", async (req, res) => {
+    const body = req.body || {};
+    const requestedTo = String(body.to || "").trim();
+    const to = requestedTo || ORDER_NOTIFICATION_EMAIL || EMAIL_USER;
+    if (!to) return res.status(400).json({ error: "Recipient 'to' is required" });
+    if (!emailTransporter) return res.status(503).json({ error: "Email transporter not configured" });
+    try {
+        const info = await emailTransporter.sendMail({
+            from: `Sriram Store <${EMAIL_USER}>`,
+            to,
+            subject: "Test Email from Sriram Store",
+            text: "If you see this, your email configuration is working correctly.",
+            html: `<div style="font-family:Arial;padding:20px;"><h2>Test Email</h2><p>If you see this, your email configuration is working correctly.</p></div>`
+        });
+        console.log(`[TEST-EMAIL] Sent to ${to}, messageId=${info.messageId}`);
+        res.json({ ok: true, messageId: info.messageId, to });
+    } catch (err) {
+        console.error("[TEST-EMAIL] Failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+async function sendSupportEmail({ to, name, phone, orderId, category, message }) {
+    if (!emailTransporter) {
+        throw new Error("Email transporter not configured. Check EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env");
+    }
+    const categoryLabel = String(category || "general").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    const mailOptions = {
+        from: `Sriram Store Support <${EMAIL_USER}>`,
+        to: to || ORDER_NOTIFICATION_EMAIL,
+        replyTo: to || ORDER_NOTIFICATION_EMAIL,
+        subject: `Support Request: ${categoryLabel} | Sriram Store`,
+        text: `New Support Request\n\nName: ${name}\nEmail: ${to}\nPhone: ${phone || "N/A"}\nOrder ID: ${orderId || "N/A"}\nCategory: ${categoryLabel}\n\nMessage:\n${message}\n\n— Sriram Store Support`,
+        html: `
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#fafafa;padding:20px;">
+                <div style="background:#2c5f2d;color:#fff;padding:18px 22px;border-radius:8px 8px 0 0;text-align:center;">
+                    <h1 style="margin:0;color:#fff;font-size:22px;">New Support Request</h1>
+                </div>
+                <div style="background:#fff;padding:24px 22px;border:1px solid #eee;border-top:none;border-radius:0 0 8px 8px;">
+                    <table style="width:100%;border-collapse:collapse;margin:0 0 18px;background:#f7faf5;border:1px solid #e3ecdc;border-radius:8px;">
+                        <tr><td style="padding:10px 14px;color:#666;">Name</td><td style="padding:10px 14px;text-align:right;"><strong>${name}</strong></td></tr>
+                        <tr><td style="padding:10px 14px;color:#666;">Email</td><td style="padding:10px 14px;text-align:right;">${to}</td></tr>
+                        <tr><td style="padding:10px 14px;color:#666;">Phone</td><td style="padding:10px 14px;text-align:right;">${phone || "N/A"}</td></tr>
+                        <tr><td style="padding:10px 14px;color:#666;">Order ID</td><td style="padding:10px 14px;text-align:right;">${orderId || "N/A"}</td></tr>
+                        <tr><td style="padding:10px 14px;color:#666;">Category</td><td style="padding:10px 14px;text-align:right;">${categoryLabel}</td></tr>
+                        <tr><td style="padding:10px 14px;color:#666;vertical-align:top;">Message</td><td style="padding:10px 14px;text-align:right;white-space:pre-wrap;">${message}</td></tr>
+                    </table>
+                    <p style="margin:0;color:#666;font-size:13px;">Please respond to this support request as soon as possible.</p>
+                    <p style="margin:14px 0 0;color:#999;font-size:12px;">— Sriram Store Support</p>
+                </div>
+            </div>
+        `
+    };
+
+    try {
+        return await emailTransporter.sendMail(mailOptions);
+    } catch (firstErr) {
+        console.warn(`[SUPPORT] First email attempt failed: ${firstErr.message}. Retrying in 1s...`);
+        await new Promise((r) => setTimeout(r, 1000));
+        return await emailTransporter.sendMail(mailOptions);
+    }
+}
+
+app.post("/support", async (req, res) => {
+    const body = req.body || {};
+    const userId = Number(body.userId);
+    const orderId = String(body.orderId || "").trim();
+    const category = String(body.category || "").trim();
+    const message = String(body.message || "").trim();
+    const name = String(body.name || "").trim();
+    const email = String(body.email || "").trim();
+
+    if (!Number.isInteger(userId) || userId < 1 || !name || !email || !orderId || !category || !message) {
+        return res.status(400).json({ error: "Name, email, Order ID, category, and message are required" });
+    }
+
+    try {
+        await databaseReady;
+        const [users] = await db.promise().query("SELECT name, email FROM users WHERE id = ?", [userId]);
+        if (!users[0]) return res.status(404).json({ error: "User not found" });
+        const user = users[0];
+
+        await supportReady;
+        const [result] = await db.promise().query(
+            "INSERT INTO support_tickets (name, email, phone, order_id, category, message) VALUES (?, ?, ?, ?, ?, ?)",
+            [name || user.name, email || user.email, null, orderId, category, message]
+        );
+
+        let emailSent = false;
+        let emailError = null;
+        if (emailTransporter) {
+            try {
+                await sendSupportEmail({ to: email || user.email, name: name || user.name, phone: null, orderId, category, message });
+                emailSent = true;
+            } catch (err) {
+                emailSent = false;
+                emailError = err.message;
+                console.error("[SUPPORT] Email notification failed:", err.message);
+            }
+        } else {
+            emailError = "Email transporter not configured";
+        }
+
+        res.status(201).json({
+            id: result.insertId,
+            name: name || user.name,
+            email: email || user.email,
+            phone: null,
+            orderId,
+            category,
+            message,
+            emailSent,
+            emailError
+        });
+    } catch (error) {
+        console.error("Support ticket creation failed:", error.message);
+        res.status(503).json({ error: "Could not submit support request", detail: error.message });
+    }
+});
+
+app.get("/support/user/:email", async (req, res) => {
+    const email = String(req.params.email || "").trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: "Email is required" });
+    try {
+        await supportReady;
+        const [tickets] = await db.promise().query(
+            "SELECT * FROM support_tickets WHERE email = ? ORDER BY created_at DESC",
+            [email]
+        );
+        res.json(tickets);
+    } catch (error) {
+        console.error("User support tickets fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load support tickets" });
+    }
+});
+
+app.get("/support/:id/messages", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ticket id" });
+    try {
+        await supportReady;
+        const [tickets] = await db.promise().query("SELECT * FROM support_tickets WHERE id = ?", [id]);
+        if (!tickets[0]) return res.status(404).json({ error: "Ticket not found" });
+        const ticket = tickets[0];
+        const [replies] = await db.promise().query("SELECT * FROM support_replies WHERE ticket_id = ? ORDER BY created_at ASC", [id]);
+
+        const messages = [{
+            message: ticket.message,
+            is_customer_reply: true,
+            created_at: ticket.created_at
+        }, ...replies];
+
+        res.json(messages);
+    } catch (error) {
+        console.error("Support messages fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load messages" });
+    }
+});
+
+app.post("/support/:id/reply", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ticket id" });
+    const userId = Number(req.body?.userId);
+    const message = String(req.body?.message || "").trim();
+    if (!Number.isInteger(userId) || userId < 1 || !message) return res.status(400).json({ error: "User ID and reply message are required" });
+
+    try {
+        await databaseReady;
+        const [users] = await db.promise().query("SELECT email FROM users WHERE id = ?", [userId]);
+        if (!users[0]) return res.status(404).json({ error: "User not found" });
+        const userEmail = users[0].email;
+
+        await supportReady;
+        const [tickets] = await db.promise().query("SELECT * FROM support_tickets WHERE id = ? AND email = ?", [id, userEmail]);
+        if (!tickets[0]) return res.status(404).json({ error: "Ticket not found or access denied" });
+
+        await db.promise().query("INSERT INTO support_replies (ticket_id, message, is_customer_reply) VALUES (?, ?, ?)", [id, message, true]);
+
+        res.status(201).json({ message: "Reply added" });
+    } catch (error) {
+        console.error("Customer support reply failed:", error.message);
+        res.status(503).json({ error: "Could not add reply" });
+    }
+});
+
+app.post("/support/quick", async (req, res) => {
+    const body = req.body || {};
+    const userId = Number(body.userId);
+    const message = String(body.message || "").trim();
+
+    if (!Number.isInteger(userId) || userId < 1 || !message) {
+        return res.status(400).json({ error: "User ID and message are required" });
+    }
+
+    try {
+        await databaseReady;
+        const [users] = await db.promise().query("SELECT name, email FROM users WHERE id = ?", [userId]);
+        if (!users[0]) return res.status(404).json({ error: "User not found" });
+        const user = users[0];
+
+        await supportReady;
+
+        let orderId = "";
+        try {
+            const [orders] = await db.promise().query("SELECT id FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", [userId]);
+            if (orders[0]) orderId = orders[0].id;
+        } catch {}
+
+        // Check for existing open ticket for this user
+        const [existingTickets] = await db.promise().query(
+            "SELECT id FROM support_tickets WHERE email = ? AND status IN ('open', 'in_progress') ORDER BY created_at DESC LIMIT 1",
+            [user.email]
+        );
+
+        let ticketId;
+        if (existingTickets[0]) {
+            ticketId = existingTickets[0].id;
+            // Add reply to existing ticket
+            await db.promise().query(
+                "INSERT INTO support_replies (ticket_id, message, is_customer_reply) VALUES (?, ?, 1)",
+                [ticketId, message]
+            );
+            // Update ticket status to open if it was in_progress
+            await db.promise().query("UPDATE support_tickets SET status = 'open', updated_at = NOW() WHERE id = ?", [ticketId]);
+        } else {
+            // Create new ticket
+            const [result] = await db.promise().query(
+                "INSERT INTO support_tickets (name, email, phone, order_id, category, message) VALUES (?, ?, ?, ?, ?, ?)",
+                [user.name, user.email, null, orderId || null, "other", message]
+            );
+            ticketId = result.insertId;
+        }
+
+        res.status(201).json({
+            id: ticketId,
+            message: "Quick support request submitted"
+        });
+    } catch (error) {
+        console.error("Quick support creation failed:", error.message);
+        res.status(503).json({ error: "Could not submit quick support request", detail: error.message });
+    }
+});
+
+// Get user's latest ticket with messages
+app.get("/support/user/:userId/chat", async (req, res) => {
+    const userId = Number(req.params.userId);
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Invalid user ID" });
+
+    try {
+        await databaseReady;
+        const [users] = await db.promise().query("SELECT name, email FROM users WHERE id = ?", [userId]);
+        if (!users[0]) return res.status(404).json({ error: "User not found" });
+        const user = users[0];
+
+        await supportReady;
+
+        // Get latest ticket for this user
+        const [tickets] = await db.promise().query(
+            "SELECT * FROM support_tickets WHERE email = ? ORDER BY created_at DESC LIMIT 1",
+            [user.email]
+        );
+
+        if (!tickets[0]) {
+            return res.json({ ticket: null, messages: [] });
+        }
+
+        const ticket = tickets[0];
+        const [replies] = await db.promise().query(
+            "SELECT * FROM support_replies WHERE ticket_id = ? ORDER BY created_at ASC",
+            [ticket.id]
+        );
+
+        const messages = [
+            { message: ticket.message, is_customer_reply: true, created_at: ticket.created_at },
+            ...replies
+        ];
+
+        res.json({ ticket, messages });
+    } catch (error) {
+        console.error("Chat history fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load chat history" });
+    }
+});
+
+app.get("/support/faq", async (req, res) => {
+    const faqs = [
+        { question: "How do I track my order?", answer: "You can track your order from the \"My orders\" section on the home page. We also send updates via email and SMS." },
+        { question: "What is your delivery timeline?", answer: "We typically deliver within 24-48 hours depending on your location. You will see the estimated delivery date at checkout." },
+        { question: "How can I cancel or return an order?", answer: "You can request a cancellation or return from the order details page. Orders can be cancelled before they are shipped." },
+        { question: "Do you offer cash on delivery?", answer: "Yes, cash on delivery is available for most locations. You can select this option at checkout." },
+        { question: "How do I apply a coupon code?", answer: "Enter your coupon code in the checkout page under \"Discount code\" and click Apply. The discount will be reflected in your total." }
+    ];
+    res.json(faqs);
+});
+
+app.post("/orders", async (req, res) => {
+    const body = req.body || {};
+    const userId = Number(body.userId);
+    const items = Number(body.items);
+    const address = String(body.address || "").trim();
+    const couponCode = String(body.couponCode || "").trim().toUpperCase();
+    const deliveryCharge = Number(body.deliveryCharge || 0);
+    const subtotal = Number(body.subtotal || 0);
+    const discount = Number(body.discount || 0);
+    const productIds = Array.isArray(body.productIds) ? body.productIds.map(Number).filter((id) => Number.isInteger(id) && id > 0) : [];
+    const totalAmount = Number(body.totalAmount || 0) + deliveryCharge;
+    console.log(`[ORDERS] New order request: user=${userId} items=${items} subtotal=${subtotal} discount=${discount} delivery=${deliveryCharge} total=${totalAmount}`);
+    if (!Number.isInteger(userId) || userId < 1 || !Number.isInteger(items) || items < 1 || !address) return res.status(400).json({ error: "Valid user id, items, and address are required" });
+    try {
+        await databaseReady;
+        await ordersReady;
+        if (couponCode) {
+            await couponsReady;
+            const [[coupon]] = await db.promise().query("SELECT * FROM coupons WHERE code = ?", [couponCode]);
+            if (!coupon || !coupon.is_active) return res.status(400).json({ error: "Invalid coupon code" });
+            if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) return res.status(400).json({ error: "This coupon has expired" });
+            if (coupon.max_uses && coupon.used_count >= coupon.max_uses) return res.status(400).json({ error: "This coupon has reached its usage limit" });
+            await db.promise().query("UPDATE coupons SET used_count = used_count + 1 WHERE code = ?", [couponCode]);
+        }
+        const id = `SR${Date.now().toString().slice(-6)}`;
+
+        // 1. SAVE ORDER
+        await db.promise().query(
+    "INSERT INTO orders (id, user_id, items, address, delivery_charge, Total_Amount, status, product_ids, coupon_code, coupon_discount, discount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [id, userId, items, address, deliveryCharge, totalAmount, "placed", JSON.stringify(productIds), couponCode || null, discount, discount]
+);
+
+        // 2. GET USER EMAIL
+        const [[user]] = await db.promise().query(
+    "SELECT name, email FROM users WHERE id = ?",
+    [userId]
+);
+console.log("USER FROM DATABASE:", user);
+console.log("USER EMAIL:", user?.email);
+
+        console.log(`[ORDERS] User lookup result:`, user);
+
+        // 3. SEND ORDER CONFIRMATION EMAIL before responding so the result is accurate.
+        let emailSent = false;
+        let emailError = null;
+        if (emailTransporter && user && user.email) {
+            try {
+                await sendOrderEmail({
+                    to: user.email,
+                    name: user.name,
+                    id,
+                    items,
+                    subtotal,
+                    discount,
+                    totalAmount,
+                    deliveryCharge,
+                    address,
+                    couponCode
+                });
+                emailSent = true;
+                const actualRecipient = user.email;
+                const ccNote = ORDER_NOTIFICATION_EMAIL && ORDER_NOTIFICATION_EMAIL.toLowerCase() !== user.email.toLowerCase()
+                    ? ` (cc: ${ORDER_NOTIFICATION_EMAIL})`
+                    : "";
+                console.log(`[ORDERS] Confirmation email sent. FROM: ${EMAIL_USER} -> TO: ${actualRecipient}${ccNote}`);
+            } catch (err) {
+                emailError = `Order confirmation email failed: ${err.message}`;
+                console.error("[ORDERS]", emailError);
+            }
+        } else {
+            emailError = !emailTransporter
+                ? "Email transporter not configured on server. Check EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env"
+                : "User has no email on file";
+            console.warn("[ORDERS]", emailError);
+        }
+
+        // 4. RESPONSE
+        res.status(201).json({
+            id,
+            user_id: userId,
+            items,
+            address,
+            delivery_charge: deliveryCharge,
+            total_amount: totalAmount,
+            status: "placed",
+            emailSent: emailSent,
+            email: user ? user.email : null,
+            emailError: emailError
+        });
+
+    } catch (error) {
+        console.error("Order creation failed:", error.message);
+
+        res.status(503).json({
+            error: "Could not place order",
+            detail: error.message
+        });
+    }
+});
+
+app.get("/api/daily-reward/status", async (req, res) => {
+    const userId = Number(req.query.userId);
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    try {
+        await dailyRewardsReady;
+        await databaseReady;
+        const [[user]] = await db.promise().query("SELECT id, name, email FROM users WHERE id = ?", [userId]);
+        if (!user) return res.status(404).json({ error: "User not found" });
+        const today = new Date().toISOString().slice(0, 10);
+        const [[existing]] = await db.promise().query(
+            "SELECT reward_type, reward_value FROM daily_rewards WHERE user_id = ? AND spin_date = ?",
+            [userId, today]
+        );
+        const [[stats]] = await db.promise().query(
+            "SELECT COUNT(*) AS total_wins FROM daily_rewards WHERE user_id = ?",
+            [userId]
+        );
+        res.json({
+            canSpin: !existing,
+            hasSpunToday: !!existing,
+            todayReward: existing || null,
+            totalWins: stats?.total_wins || 0,
+            today: today
+        });
+    } catch (error) {
+        console.error("Daily reward status fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load reward status" });
+    }
+});
+
+app.post("/api/daily-reward/spin", async (req, res) => {
+    const userId = Number(req.body?.userId);
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    try {
+        await dailyRewardsReady;
+        await spinPrizesReady;
+        await databaseReady;
+        const [[user]] = await db.promise().query("SELECT name, email FROM users WHERE id = ?", [userId]);
+        if (!user) return res.status(404).json({ error: "User not found" });
+        const today = new Date().toISOString().slice(0, 10);
+        const [[existing]] = await db.promise().query(
+            "SELECT reward_type, reward_value FROM daily_rewards WHERE user_id = ? AND spin_date = ?",
+            [userId, today]
+        );
+        if (existing) {
+            return res.status(400).json({ error: "You have already spun today. Come back tomorrow!" });
+        }
+        const [prizes] = await db.promise().query(
+            "SELECT id, name, type, value, probability FROM spin_prizes WHERE is_active = 1 AND probability > 0"
+        );
+        if (!prizes.length) return res.status(503).json({ error: "No prizes available" });
+        const totalWeight = prizes.reduce((sum, p) => sum + Number(p.probability), 0);
+        let random = Math.random() * totalWeight;
+        let selected = prizes[0];
+        for (const prize of prizes) {
+            random -= Number(prize.probability);
+            if (random <= 0) { selected = prize; break; }
+        }
+        await db.promise().query(
+            "INSERT INTO daily_rewards (user_id, reward_type, reward_value, spin_date) VALUES (?, ?, ?, ?)",
+            [userId, selected.type, selected.value, today]
+        );
+        let message = "";
+        if (selected.type === "coupon") {
+            await db.promise().query(
+                "INSERT INTO coupons (code, discount_percent, min_order_amount, is_active) VALUES (?, ?, 0, 1) ON DUPLICATE KEY UPDATE discount_percent = VALUES(discount_percent), is_active = 1",
+                [selected.value, parseInt(selected.value.replace("SPIN", "")) || 10]
+            );
+            message = `You won a ${selected.name} (${selected.value})! Check your coupons.`;
+        } else {
+            message = `You won ${selected.name}!`;
+        }
+        await createUserNotification(userId, `Spin & Win: ${message}`);
+        res.json({ success: true, prize: { type: selected.type, value: selected.value, name: selected.name }, message });
+    } catch (error) {
+        console.error("Spin failed:", error.message);
+        res.status(503).json({ error: "Spin failed. Please try again." });
+    }
+});
+
+app.get("/api/spin/prizes", async (req, res) => {
+    try {
+        await spinPrizesReady;
+        const [prizes] = await db.promise().query(
+            "SELECT id, name, type, value, probability FROM spin_prizes WHERE is_active = 1 ORDER BY id"
+        );
+        res.json(prizes);
+    } catch (error) {
+        console.error("Spin prizes fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load prizes" });
+    }
+});
