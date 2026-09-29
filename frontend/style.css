@@ -1011,7 +1011,7 @@ body.auth-locked .auth-card > .close-button { display: none; }
 }
 
 /* Referral Section */
-.referral-section { max-width: 1240px; margin: 0 auto 16px; padding: 0 16px; }
+.referral-section { max-width: 600px; margin: 0 auto 16px; padding: 0 16px; }
 .referral-card {
     background: #fff;
     border: 1px solid var(--line);
@@ -1062,8 +1062,10 @@ body.auth-locked .auth-card > .close-button { display: none; }
     font-size: 14px;
 }
 .referral-code-wrap .copy-btn {
-    padding: 4px 6px;
-    font-size: 9px;
+    padding: 8px 10px;
+    font-size: 11px;
+    min-width: auto;
+    width: auto;
 }
 .referral-history h4 { font-size: 11px; color: var(--ink); margin: 0 0 6px; }
 .referral-list { display: flex; flex-direction: column; gap: 6px; }

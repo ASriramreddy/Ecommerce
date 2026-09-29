@@ -119,6 +119,12 @@
 						<label>Password<input id="admin-password" type="password" value="admin123" required></label>
 						<button type="submit" class="primary-button">Sign in</button>
 					</form>
+					<div style="margin-top: 20px; padding: 16px; background: var(--adm-surface); border-radius: 8px; border: 1px solid var(--adm-line);">
+						<p style="margin: 0 0 12px; font-size: 12px; font-weight: 600; color: var(--adm-accent-dark);">Support Dashboard Login</p>
+						<p style="margin: 0 0 6px; font-size: 11px; color: var(--adm-muted);">Email: <code>support@sriramstore.local</code></p>
+						<p style="margin: 0; font-size: 11px; color: var(--adm-muted);">Password: <code>support123</code></p>
+						<p style="margin: 8px 0 0; font-size: 10px; color: var(--adm-muted);">Use these credentials to access the <a href="admin-support.html" style="color: var(--adm-accent);">Customer Support Dashboard</a></p>
+					</div>
 					<p class="admin-error" id="admin-error" role="alert"></p>
 				</section>
 				<section class="admin-panel" id="dashboard" hidden>
@@ -584,11 +590,22 @@
 			document.querySelector("#admin-login-form").addEventListener("submit", async event => {
 				event.preventDefault();
 				adminError.textContent = "";
+				const email = document.querySelector("#admin-email").value;
+				const password = document.querySelector("#admin-password").value;
 				try {
-					const data = await request("/admin/login", { method: "POST", body: JSON.stringify({ email: document.querySelector("#admin-email").value, password: document.querySelector("#admin-password").value }) });
+					const data = await request("/admin/login", { method: "POST", body: JSON.stringify({ email, password }) });
 					if (data.token) {
+						// Check if it's a support admin token by trying to access support panel
+						// The token itself doesn't indicate type, so we check if it was support credentials
+						const isSupportCreds = email === "support@sriramstore.local" && password === "support123";
 						localStorage.setItem(tokenKey, data.token);
-						localStorage.setItem(adminProfileKey, JSON.stringify({ name: "Administrator", email: document.querySelector("#admin-email").value.trim().toLowerCase() }));
+						if (isSupportCreds) {
+							localStorage.setItem("sriram-support-admin-token", data.token);
+							localStorage.setItem("sriram-support-admin-profile", JSON.stringify({ name: "Support Team", email: "support@sriramstore.local" }));
+							window.location.href = "admin-support.html";
+							return;
+						}
+						localStorage.setItem(adminProfileKey, JSON.stringify({ name: "Administrator", email: email.trim().toLowerCase() }));
 						const redirect = new URLSearchParams(window.location.search).get("redirect");
 						if (redirect) {
 							window.location.href = redirect;
@@ -601,42 +618,9 @@
 						showToast("Signed in as customer");
 						window.location.href = "index.html";
 					} else {
-						// Not admin creds — try support dashboard login
-						try {
-							const supportResponse = await fetch(`${API_BASE}/support-admin/login`, {
-								method: "POST",
-								headers: { "Content-Type": "application/json" },
-								body: JSON.stringify({ email, password })
-							});
-							const supportData = await supportResponse.json().catch(() => ({}));
-							if (supportResponse.ok && supportData.token) {
-								localStorage.setItem("sriram-support-admin-token", supportData.token);
-								localStorage.setItem("sriram-support-admin-profile", JSON.stringify({ name: supportData.name || "Support Team", email: supportData.email }));
-								window.location.href = "admin-support.html";
-								return;
-							}
-						} catch (supportError) {
-							console.error("Support login failed:", supportError.message);
-						}
 						adminError.textContent = "Invalid credentials";
 					}
 				} catch (error) {
-					try {
-						const supportResponse = await fetch(`${API_BASE}/support-admin/login`, {
-							method: "POST",
-							headers: { "Content-Type": "application/json" },
-							body: JSON.stringify({ email, password })
-						});
-						const supportData = await supportResponse.json().catch(() => ({}));
-						if (supportResponse.ok && supportData.token) {
-							localStorage.setItem("sriram-support-admin-token", supportData.token);
-							localStorage.setItem("sriram-support-admin-profile", JSON.stringify({ name: supportData.name || "Support Team", email: supportData.email }));
-							window.location.href = "admin-support.html";
-							return;
-						}
-					} catch (supportError) {
-						console.error("Support login failed:", supportError.message);
-					}
 					adminError.textContent = error.message;
 				}
 			});

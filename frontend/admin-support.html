@@ -307,6 +307,19 @@ body {
     text-align: center;
 }
 
+.charts-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    margin-bottom: 22px;
+}
+
+@media (max-width: 900px) {
+    .charts-row {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* FILTER */
 
 .toolbar {
@@ -718,24 +731,26 @@ body {
     </div>
 
     <!-- Pie Chart Section -->
-    <div class="chart-section" style="margin-bottom: 22px;">
-        <div class="chart-card" style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.06); padding: 20px;">
-            <h3 style="margin: 0 0 16px; font-size: 16px; color: #374151; font-weight: 600;">Tickets by Category</h3>
-            <div style="position: relative; height: 300px; max-width: 500px; margin: 0 auto;">
-                <canvas id="categoryPieChart"></canvas>
+    <div class="charts-row">
+        <div class="chart-section">
+            <div class="chart-card" style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.06); padding: 20px; height: 100%;">
+                <h3 style="margin: 0 0 16px; font-size: 16px; color: #374151; font-weight: 600;">Tickets by Category</h3>
+                <div style="position: relative; height: 300px; max-width: 500px; margin: 0 auto;">
+                    <canvas id="categoryPieChart"></canvas>
+                </div>
+                <div id="pieChartLegend" style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 16px; font-size: 13px;"></div>
             </div>
-            <div id="pieChartLegend" style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 16px; font-size: 13px;"></div>
         </div>
-    </div>
 
-    <!-- Category-Status Breakdown Chart -->
-    <div class="chart-section" style="margin-bottom: 22px;">
-        <div class="chart-card" style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.06); padding: 20px;">
-            <h3 style="margin: 0 0 16px; font-size: 16px; color: #374151; font-weight: 600;">Category vs Status Breakdown</h3>
-            <div style="position: relative; height: 300px; max-width: 800px; margin: 0 auto;">
-                <canvas id="categoryStatusChart"></canvas>
+        <!-- Category-Status Breakdown Chart -->
+        <div class="chart-section">
+            <div class="chart-card" style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.06); padding: 20px; height: 100%;">
+                <h3 style="margin: 0 0 16px; font-size: 16px; color: #374151; font-weight: 600;">Category vs Status Breakdown</h3>
+                <div style="position: relative; height: 300px; max-width: 800px; margin: 0 auto;">
+                    <canvas id="categoryStatusChart"></canvas>
+                </div>
+                <div id="categoryStatusLegend" style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 16px; font-size: 13px;"></div>
             </div>
-            <div id="categoryStatusLegend" style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 16px; font-size: 13px;"></div>
         </div>
     </div>
 
@@ -803,7 +818,7 @@ CHANGE THIS TO YOUR RENDER BACKEND URL
 ====================================================
 */
 
-const API_BASE = "https://ecommerce-1-r5m4.onrender.com";
+const API_BASE = "http://localhost:3000";
 const API = API_BASE;
 
 

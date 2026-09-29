@@ -11,7 +11,7 @@ const api = {
         return response.json();
     }
 };
-const API_URL = "https://ecommerce-1-r5m4.onrender.com";
+const API_URL = "http://localhost:3000";
 let products = [];
 let cart = [];
 let couponApplied = false;
@@ -21,25 +21,25 @@ let selectedState = "";
 let selectedCategory = "";
 let wishlist = JSON.parse(localStorage.getItem("sriram-store-wishlist") || "[]");
 
-const productGrid = document.querySelector("#product-grid");
-const categoryFilter = document.querySelector("#category-filter");
-const searchInput = document.querySelector("#search-input");
-const cartItems = document.querySelector("#cart-items");
-const authModal = document.querySelector("#auth-modal");
-const profileModal = document.querySelector("#profile-modal");
-const detailsModal = document.querySelector("#details-modal");
-const checkoutModal = document.querySelector("#checkout-modal");
-const orderEditModal = document.querySelector("#order-edit-modal");
-const orderDetailsModal = document.querySelector("#order-details-modal");
-const ordersList = document.querySelector("#orders-list");
-const loginForm = document.querySelector("#login-form");
-const registerForm = document.querySelector("#register-form");
-const profileLoginForm = document.querySelector("#profile-login-form");
-const profileRegisterForm = document.querySelector("#profile-register-form");
-const profileLoginTab = document.querySelector("#profile-login-tab");
-const profileRegisterTab = document.querySelector("#profile-register-tab");
-const authError = document.querySelector("#auth-error");
-const profileError = document.querySelector("#profile-error");
+let productGrid = document.querySelector("#product-grid");
+let categoryFilter = document.querySelector("#category-filter");
+let searchInput = document.querySelector("#search-input");
+let cartItems = document.querySelector("#cart-items");
+let authModal = document.querySelector("#auth-modal");
+let profileModal = document.querySelector("#profile-modal");
+let detailsModal = document.querySelector("#details-modal");
+let checkoutModal = document.querySelector("#checkout-modal");
+let orderEditModal = document.querySelector("#order-edit-modal");
+let orderDetailsModal = document.querySelector("#order-details-modal");
+let ordersList = document.querySelector("#orders-list");
+let loginForm = document.querySelector("#login-form");
+let registerForm = document.querySelector("#register-form");
+let profileLoginForm = document.querySelector("#profile-login-form");
+let profileRegisterForm = document.querySelector("#profile-register-form");
+let profileLoginTab = document.querySelector("#profile-login-tab");
+let profileRegisterTab = document.querySelector("#profile-register-tab");
+let authError = document.querySelector("#auth-error");
+let profileError = document.querySelector("#profile-error");
 const authStorageKey = "sriram-store-user";
 const ordersStorageKey = "sriram-store-orders";
 const wishlistStorageKey = "sriram-store-wishlist";
@@ -136,7 +136,8 @@ function renderNotifications() {
   }
   list.innerHTML = notifications.map((n) => `<div class="notification-item ${n.read ? "is-read" : ""}" data-notification-id="${n.id}"><p>${escapeHtml(n.message)}</p><small>${new Date(n.time).toLocaleString()}</small></div>`).join("");
   list.querySelectorAll("[data-notification-id]").forEach((item) => {
-    item.addEventListener("click", () => {
+    item.addEventListener("click", (event) => {
+      event.stopPropagation();
       const id = item.dataset.notificationId;
       markNotificationRead(id);
     });
@@ -423,37 +424,49 @@ async function submitRatingFromOrderDetails(productId, rating, comment) {
 function showOrderSuccess({ orderId, items, subtotal, discount, total, delivery, couponCode, emailSent, email }) {
   const modal = document.querySelector("#order-success-modal");
   if (!modal) {
+    console.error("Order success modal not found in DOM");
     showToast(emailSent ? `Order ${orderId} placed. Confirmation email sent.` : `Order ${orderId} placed.`);
     return;
   }
-  const fmt = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
-  const setText = (selector, value) => {
-    const el = document.querySelector(selector);
-    if (el) el.textContent = value;
-  };
-  const toggleRow = (selector, show) => {
-    const el = document.querySelector(selector);
-    if (el) el.hidden = !show;
-  };
-  setText("#order-success-id", orderId || "—");
-  setText("#order-success-items", items != null ? String(items) : "—");
-  setText("#order-success-subtotal", fmt(subtotal));
-  setText("#order-success-discount", `-${fmt(discount)}`);
-  setText("#order-success-delivery", fmt(delivery));
-  const deliveryDays = getEstimatedDeliveryDays();
-  setText("#order-success-delivery-days", deliveryDays <= 1 ? "1 day" : `${deliveryDays} days`);
-  setText("#order-success-total", fmt(total));
-  toggleRow("#order-success-coupon-row", !!couponCode);
-  toggleRow("#order-success-discount-row", Number(discount) > 0);
-  if (couponCode) setText("#order-success-coupon", couponCode);
+  try {
+    const fmt = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
+    const setText = (selector, value) => {
+      const el = modal.querySelector(selector);
+      if (el) el.textContent = value;
+    };
+    const toggleRow = (selector, show) => {
+      const el = modal.querySelector(selector);
+      if (el) el.hidden = !show;
+    };
+    setText("#order-success-id", orderId || "—");
+    setText("#order-success-items", items != null ? String(items) : "—");
+    setText("#order-success-subtotal", fmt(subtotal));
+    setText("#order-success-discount", `-${fmt(discount)}`);
+    setText("#order-success-delivery", fmt(delivery));
+    const deliveryDays = getEstimatedDeliveryDays();
+    setText("#order-success-delivery-days", deliveryDays <= 1 ? "1 day" : `${deliveryDays} days`);
+    setText("#order-success-total", fmt(total));
+    toggleRow("#order-success-coupon-row", !!couponCode);
+    toggleRow("#order-success-discount-row", Number(discount) > 0);
+    if (couponCode) setText("#order-success-coupon", couponCode);
+    updateOrderSuccessEmail(emailSent, email);
+    modal.classList.add("open");
+    modal.setAttribute("aria-hidden", "false");
+    console.log("Order success modal opened");
+  } catch (e) {
+    console.error("Error in showOrderSuccess:", e);
+    showToast(`Order ${orderId} placed successfully`, true);
+  }
+}
+
+function updateOrderSuccessEmail(emailSent, email) {
   const emailText = document.querySelector("#order-success-email-text");
+  if (!emailText) return;
   if (emailSent) {
     emailText.innerHTML = `A confirmation email has been sent to <strong>${email || "your address"}</strong>.`;
   } else {
     emailText.textContent = "Your order is confirmed. (Email notification is currently unavailable.)";
   }
-  modal.classList.add("open");
-  modal.setAttribute("aria-hidden", "false");
 }
 
 function closeOrderSuccess() {
@@ -719,7 +732,7 @@ function scheduleMidnightUpdate() {
 function renderProducts() {
   const term = searchInput.value.trim().toLowerCase();
   const sortValue = document.querySelector("#sort-select")?.value || "";
-  let visibleProducts = products.filter((product) => Number(product.stock) > 0).filter((product) => {
+  let visibleProducts = products.filter((product) => {
     const matchesSearch = `${product.name} ${product.color || ""} ${product.tag || ""}`.toLowerCase().includes(term);
     const matchesCategory = !selectedCategory || product.category === selectedCategory;
     return matchesSearch && matchesCategory;
@@ -735,17 +748,12 @@ function renderProducts() {
   const isNotDeliverable = deliveryCheckerNotDeliverable;
   const isDeliveryChecked = deliveryCheckerPincode && !isNotDeliverable;
   productGrid.innerHTML = visibleProducts.map((product) => {
-    const expiryTag = getExpiryTag(product);
-    const tagHtml = expiryTag
-      ? `<span class="product-tag ${expiryTag.className}">${expiryTag.text}</span>`
-      : `<span class="product-tag rotating">${product.tag || getRotatingLabel()}</span>`;
     const deliveryHtml = isDeliveryChecked ? `<div class="product-delivery available">✅ Delivery available to this pincode</div>` : (deliveryDays ? `<div class="product-delivery">Delivery in ${deliveryDays} day${deliveryDays > 1 ? "s" : ""}</div>` : "");
     const notDeliverableHtml = isNotDeliverable ? `<div class="product-not-deliverable">❌ Not deliverable to your area</div>` : "";
-    // Use production URL for sharing (replace with your actual domain)
-    const shareUrl = `https://sriramstore.com/product/${product.id}`;
+    const shareUrl = `${window.location.origin}${window.location.pathname}?product=${product.id}`;
     return `
     <article class="product-card" data-detail="${product.id}" tabindex="0">
-      <div class="product-image"><img src="${imageFor(product)}" alt="Fresh ${product.name}" loading="lazy">${tagHtml}</div>
+      <div class="product-image"><img src="${imageFor(product)}" alt="Fresh ${product.name}" loading="lazy"></div>
       <h3>${product.name}</h3>
       <div class="product-meta"><span>${product.color || "Fresh produce"}</span><span class="product-price">${formatPrice(finalPrice(product))}${discountFor(product) ? ` <del>${formatPrice(product.price)}</del>` : ""}</span></div>
       <div class="product-stock">${Number(product.stock) > 0 ? `${product.stock} in stock` : "Out of stock"}</div>
@@ -756,7 +764,7 @@ function renderProducts() {
       <button class="wishlist-button ${wishlist.includes(product.id) ? "is-saved" : ""}" type="button" data-wishlist="${product.id}" aria-label="${wishlist.includes(product.id) ? "Remove from" : "Add to"} wishlist">&#9825;</button>
       <div class="add-area" data-product="${product.id}">${renderAddControl(product)}</div>
     </article>`;
-  }).join("") || '<p class="no-results">No fresh items found.</p>';
+  }).join("") || '<p class="no-results">No products found.</p>';
 }
 
 function renderCategoryFilter() {
@@ -1157,6 +1165,8 @@ function renderReferralHistory(referrals) {
 }
 
 function initReferralButtons() {
+  if (window.__referralButtonsInited) return;
+  window.__referralButtonsInited = true;
   const copyBtn = document.querySelector("#copy-referral-btn");
   if (copyBtn) {
     copyBtn.onclick = () => {
@@ -1168,13 +1178,12 @@ function initReferralButtons() {
   if (shareBtn) {
     shareBtn.onclick = () => {
       const code = document.querySelector("#referral-code").textContent;
-      const baseUrl = window.location.origin + window.location.pathname.replace(/[^/]*$/, "");
-      const url = baseUrl + "index.html?ref=" + code;
-      const text = "Join Sriram Store and get ₹50 off your first order! Use my code: " + code + "\n" + url;
+      const baseUrl = window.location.origin + window.location.pathname.split("/").slice(0, -1).join("/") + "/";
+      const url = baseUrl + "?ref=" + code;
       if (navigator.share) {
-        navigator.share({ title: "Sriram Store Referral", text, url });
+        navigator.share({ title: "Sriram Store Referral", text: "Join Sriram Store and get ₹50 off your first order!", url }).catch(() => {});
       } else {
-        navigator.clipboard.writeText(text).then(() => showToast("Referral message copied!"));
+        navigator.clipboard.writeText(url).then(() => showToast("Referral link copied!"));
       }
     };
   }
@@ -1182,8 +1191,8 @@ function initReferralButtons() {
   if (linkBtn) {
     linkBtn.onclick = () => {
       const code = document.querySelector("#referral-code").textContent;
-      const baseUrl = window.location.origin + window.location.pathname.replace(/[^/]*$/, "");
-      const url = baseUrl + "index.html?ref=" + code;
+      const baseUrl = window.location.origin + window.location.pathname.split("/").slice(0, -1).join("/") + "/";
+      const url = baseUrl + "?ref=" + code;
       navigator.clipboard.writeText(url).then(() => showToast("Referral link copied!"));
     };
   }
@@ -1345,7 +1354,9 @@ async function loadProducts() {
     console.log("Response status:", response.status);
     if (!response.ok) throw new Error(`Products request failed: ${response.status}`);
     products = await response.json();
-    console.log("Loaded products:", products.length);
+    console.log("Loaded products:", products);
+    console.log("Products count:", products.length);
+    
     selectedCategory = "";
     renderCategoryFilter();
     renderProducts();
@@ -1992,6 +2003,7 @@ document.querySelector("#details-add").addEventListener("click", () => {
   const quantity = Number(document.querySelector("#details-quantity").textContent);
   for (let count = 0; count < quantity; count += 1) addToCart(id);
   closeModal(detailsModal);
+  openCheckout();
 });
 document.querySelector("#details-buy").addEventListener("click", () => {
   const id = Number(detailsModal.dataset.productId);
@@ -1999,130 +2011,6 @@ document.querySelector("#details-buy").addEventListener("click", () => {
   for (let count = 0; count < quantity; count += 1) addToCart(id);
   closeModal(detailsModal);
   openCheckout();
-});
-document.querySelector("#checkout-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const form = event.currentTarget;
-  if (!form.checkValidity()) return form.reportValidity();
-  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
-  const items = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const address = `${document.querySelector("#customer-address").value}, ${document.querySelector("#customer-city").value}, ${document.querySelector("#customer-district").value}, ${document.querySelector("#customer-state").value}, ${document.querySelector("#customer-pin").value}, ${document.querySelector("#customer-country").value}`;
-  const orderSubtotal = cart.reduce((sum, item) => sum + finalPrice(productById(item.id)) * item.quantity, 0);
-  const offerDiscount = activeOffer
-    ? cart.reduce((sum, item) => {
-        const product = productById(item.id);
-        if (!offerAppliesToProduct(activeOffer, product)) return sum;
-        return sum + finalPrice(product) * item.quantity * (Number(activeOffer.discount_percent) / 100);
-      }, 0)
-    : 0;
-  const couponDiscount = couponApplied && appliedCoupon && !activeOffer ? orderSubtotal * (appliedCoupon.discount_percent / 100) : 0;
-  const orderDiscount = offerDiscount + couponDiscount;
-  const orderTotal = orderSubtotal - orderDiscount;
-  const orderGrandTotal = orderTotal + deliveryCharge;
-  const activeCouponCode = activeOffer?.coupon_code || (couponApplied && appliedCoupon ? appliedCoupon.code : "");
-  let serverOrderId = null;
-  let emailSent = false;
-  let confirmationEmail = null;
-  if (user) {
-    try {
-      const response = await fetch(`${API_URL}/orders`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.id, items, productIds: cart.map((item) => item.id), address, couponCode: activeCouponCode, deliveryCharge, subtotal: orderSubtotal, discount: orderDiscount, totalAmount: orderTotal }),
-      });
-      const data = await response.json().catch(() => ({ error: "Invalid response" }));
-      if (response.ok) {
-        serverOrderId = data.id;
-        emailSent = !!data.emailSent;
-        confirmationEmail = data.email || (user && user.email) || null;
-        await fetch(`${API_URL}/auth/me`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: user.id,
-            name: document.querySelector("#customer-name").value.trim(),
-            phone: document.querySelector("#customer-phone").value.trim(),
-            address: document.querySelector("#customer-address").value.trim(),
-            city: document.querySelector("#customer-city").value.trim(),
-            district: document.querySelector("#customer-district").value.trim(),
-            state: document.querySelector("#customer-state").value.trim(),
-            country: document.querySelector("#customer-country").value.trim(),
-            pin: document.querySelector("#customer-pin").value.trim(),
-          }),
-        }).catch(() => {});
-      } else {
-        showToast(data.error || "Could not place order", false);
-      }
-    } catch (error) {
-      showToast("Could not connect to server", false);
-    }
-  }
-  const localOrders = JSON.parse(localStorage.getItem(ordersStorageKey) || "[]");
-  const finalOrderId = serverOrderId || `SR${Date.now().toString().slice(-6)}`;
-  localOrders.unshift({ id: finalOrderId, items, productIds: cart.map((item) => item.id), address, userId: user?.id || null, deliveryCharge, orderTotal, couponCode: activeCouponCode, couponDiscount: orderDiscount });
-  localStorage.setItem(ordersStorageKey, JSON.stringify(localOrders));
-  cart = [];
-  clearCoupon();
-  deliveryCharge = 0;
-  selectedState = "";
-  renderCart();
-  refreshAddButtons();
-  renderOrders();
-  form.reset();
-  closeModal(checkoutModal);
-  setCartOpen(false);
-  if (!user) {
-    emailSent = false;
-    confirmationEmail = null;
-  }
-  showOrderSuccess({
-    orderId: finalOrderId,
-    items,
-    subtotal: orderSubtotal,
-    discount: orderDiscount,
-    total: orderGrandTotal,
-    delivery: deliveryCharge,
-    couponCode: activeCouponCode,
-    emailSent,
-    email: confirmationEmail
-  });
-  addNotification(`Order ${finalOrderId} placed successfully · ${items} item${items === 1 ? "" : "s"} · ${formatPrice(orderGrandTotal)}`);
-  if (emailSent && confirmationEmail) {
-    showToast(`Confirmation email sent to ${confirmationEmail}`);
-  } else {
-    showToast("Your order has been placed");
-  }
-});
-document.querySelector("#order-edit-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const form = event.currentTarget;
-  if (!form.checkValidity()) return form.reportValidity();
-  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
-  const orderId = orderEditModal.dataset.orderId;
-  const address = document.querySelector("#edit-order-address").value.trim();
-  if (!orderId || !address) return showToast("Order ID and address are required", false);
-  const localOrders = JSON.parse(localStorage.getItem(ordersStorageKey) || "[]");
-  const localOrder = localOrders.find((o) => o.id === orderId);
-  if (localOrder) {
-    localOrder.address = address;
-    localStorage.setItem(ordersStorageKey, JSON.stringify(localOrders));
-    renderOrders();
-  }
-  if (user?.id) {
-    try {
-      const response = await fetch(`${API_URL}/orders/${encodeURIComponent(orderId)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.id, address }),
-      });
-      const data = await response.json().catch(() => ({ error: "Invalid response" }));
-      if (!response.ok) showToast(data.error || "Could not update order", false);
-    } catch (error) {
-      showToast("Could not connect to server", false);
-    }
-  }
-  closeModal(orderEditModal);
-  showToast("Order address updated");
 });
 document.querySelector("#login-tab").addEventListener("click", () => setAuthMode("login"));
 document.querySelector("#register-tab").addEventListener("click", () => setAuthMode("register"));
@@ -2352,7 +2240,7 @@ function showForgotPasswordFlow() {
             if (newPassword) alert("Password must be at least 6 characters");
             return;
           }
-          fetch(`${API_URL}/auth/reset-password`, {
+fetch(`${API_URL}/auth/reset-password`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email, otp, password: newPassword }),
@@ -2361,7 +2249,7 @@ function showForgotPasswordFlow() {
             .then((data) => {
               if (data.error) {
                 alert(data.error);
-              } else {
+} else {
                 alert(data.message || "Password reset successfully");
               }
             })
@@ -2765,7 +2653,20 @@ async function checkSpinStatus() {
   const spinButton = document.querySelector("#spin-button");
   const statusEl = document.querySelector("#spin-status");
   if (!user?.id || !spinButton) return;
-  if (statusEl) { statusEl.textContent = "Spin the wheel to win rewards!"; statusEl.className = "spin-status"; }
+  try {
+    const response = await fetch(`${API_URL}/api/daily-reward/status?userId=${user.id}`);
+    const data = await response.json().catch(() => ({}));
+    if (response.ok && data.hasSpunToday) {
+      spinButton.disabled = true;
+      spinButton.innerHTML = "<span>⏰</span> Come Tomorrow";
+      if (statusEl) { statusEl.textContent = "You've already spun today. Come back tomorrow!"; statusEl.className = "spin-status"; }
+    } else {
+      resetSpinButton();
+    }
+  } catch (error) {
+    console.error("Spin status check failed:", error);
+    resetSpinButton();
+  }
 }
 
 async function submitSpin() {
@@ -2783,6 +2684,14 @@ async function submitSpin() {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
+      if (data.error && data.error.includes("already spun")) {
+        showToast("You've already spun today. Come back tomorrow!", false);
+        const spinButton = document.querySelector("#spin-button");
+        const statusEl = document.querySelector("#spin-status");
+        if (spinButton) { spinButton.disabled = true; spinButton.innerHTML = "<span>⏰</span> Come Tomorrow"; }
+        if (statusEl) { statusEl.textContent = "Come back tomorrow for another spin"; statusEl.className = "spin-status"; }
+        return;
+      }
       showToast(data.error || "Spin failed", false);
       return;
     }
@@ -2845,7 +2754,17 @@ function closeSpinModal() {
 
 function openSpinWheelModal() {
   const modal = document.querySelector("#spin-wheel-modal");
-  if (modal) { modal.classList.add("open"); modal.setAttribute("aria-hidden", "false"); drawSpinWheel(); checkSpinStatus(); }
+  if (modal) { modal.classList.add("open"); modal.setAttribute("aria-hidden", "false"); drawSpinWheel(); checkSpinStatus(); resetSpinButton(); }
+}
+
+function resetSpinButton() {
+  const spinButton = document.querySelector("#spin-button");
+  const statusEl = document.querySelector("#spin-status");
+  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+  if (!user?.id || !spinButton) return;
+  if (statusEl) { statusEl.textContent = "One spin per day"; statusEl.className = "spin-status is-valid"; }
+  spinButton.disabled = false;
+  spinButton.innerHTML = "<span>&#127922;</span> Spin the Wheel";
 }
 
 function closeSpinWheelModal() {
@@ -2896,7 +2815,204 @@ function initApp() {
     window.history.replaceState({}, document.title, newUrl);
   }
   
+  // Check for product parameter to open product details
+  const productId = urlParams.get("product");
+  if (productId) {
+    const id = Number(productId);
+    if (Number.isInteger(id) && id > 0) {
+      // Wait for products to load then open
+      const checkProducts = setInterval(() => {
+        if (products.length > 0) {
+          clearInterval(checkProducts);
+          openDetails(id);
+        }
+      }, 100);
+      // Fallback timeout
+      setTimeout(() => clearInterval(checkProducts), 5000);
+    }
+    // Clean URL
+    const newUrl = window.location.pathname + window.location.hash;
+    window.history.replaceState({}, document.title, newUrl);
+  }
+  
   loadProducts();
+  
+  // Attach checkout form submit handler
+  const checkoutForm = document.querySelector("#checkout-form");
+  console.log("checkoutForm found:", !!checkoutForm);
+  if (checkoutForm) {
+    checkoutForm.addEventListener("submit", async (event) => {
+      console.log("Checkout form submitted");
+      event.preventDefault();
+      const form = event.currentTarget;
+      if (!form.checkValidity()) {
+        console.log("Form invalid");
+        return form.reportValidity();
+      }
+      console.log("Form valid, proceeding...");
+      const activeCouponCode = activeOffer?.coupon_code || (couponApplied && appliedCoupon ? appliedCoupon.code : "");
+      let serverOrderId = null;
+      let emailSent = false;
+      let confirmationEmail = null;
+      let apiError = null;
+      const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+      console.log("User:", user);
+      const items = cart.reduce((sum, item) => sum + item.quantity, 0);
+      console.log("Items in cart:", items, cart);
+      if (items === 0) {
+        showToast("Cart is empty", false);
+        return;
+      }
+      const address = `${document.querySelector("#customer-address").value}, ${document.querySelector("#customer-city").value}, ${document.querySelector("#customer-district").value}, ${document.querySelector("#customer-state").value}, ${document.querySelector("#customer-pin").value}, ${document.querySelector("#customer-country").value}`;
+      const orderSubtotal = cart.reduce((sum, item) => sum + finalPrice(productById(item.id)) * item.quantity, 0);
+      const offerDiscount = activeOffer
+        ? cart.reduce((sum, item) => {
+            const product = productById(item.id);
+            if (!offerAppliesToProduct(activeOffer, product)) return sum;
+            return sum + finalPrice(product) * item.quantity * (Number(activeOffer.discount_percent) / 100);
+          }, 0)
+        : 0;
+      const couponDiscount = couponApplied && appliedCoupon && !activeOffer ? orderSubtotal * (appliedCoupon.discount_percent / 100) : 0;
+      const orderDiscount = offerDiscount + couponDiscount;
+      const orderTotal = orderSubtotal - orderDiscount;
+      const orderGrandTotal = orderTotal + deliveryCharge;
+
+      // Show loading state
+      const submitBtn = form.querySelector('button[type="submit"]');
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = "Placing order... <span>⏳</span>";
+
+      // Capture cart items for API call
+      const productIds = cart.map((item) => item.id);
+
+      // Call API first (waits for email to be sent)
+      if (user && user.id) {
+        try {
+          console.log("Sending order to API...");
+          const response = await fetch(`${API_URL}/orders`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: Number(user.id), items, productIds, address, couponCode: activeCouponCode, deliveryCharge, subtotal: orderSubtotal, discount: orderDiscount, totalAmount: orderTotal }),
+          });
+          console.log("Response status:", response.status);
+          const data = await response.json().catch(() => ({ error: "Invalid response" }));
+          console.log("Response data:", data);
+          if (response.ok) {
+            serverOrderId = data.id;
+            emailSent = !!data.emailSent;
+            confirmationEmail = data.email || (user && user.email) || null;
+            // Update user profile
+            await fetch(`${API_URL}/auth/me`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userId: Number(user.id),
+                name: document.querySelector("#customer-name").value.trim(),
+                phone: document.querySelector("#customer-phone").value.trim(),
+                address: document.querySelector("#customer-address").value.trim(),
+                city: document.querySelector("#customer-city").value.trim(),
+                district: document.querySelector("#customer-district").value.trim(),
+                state: document.querySelector("#customer-state").value.trim(),
+                country: document.querySelector("#customer-country").value.trim(),
+                pin: document.querySelector("#customer-pin").value.trim(),
+              }),
+            }).catch(() => {});
+          } else {
+            apiError = data.error || "Could not place order";
+          }
+        } catch (error) {
+          console.error("Order error:", error);
+          apiError = "Could not connect to server";
+        }
+      }
+      if (apiError) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = "Confirm and place order <span>&rarr;</span>";
+        showToast(apiError, false);
+        return;
+      }
+
+      // Generate order ID (use server ID if available)
+      const finalOrderId = serverOrderId || `SR${Date.now().toString().slice(-6)}`;
+
+      // Save to localStorage
+      const localOrders = JSON.parse(localStorage.getItem(ordersStorageKey) || "[]");
+      localOrders.unshift({ id: finalOrderId, items, productIds, address, userId: user?.id || null, deliveryCharge, orderTotal, couponCode: activeCouponCode, couponDiscount: orderDiscount });
+      localStorage.setItem(ordersStorageKey, JSON.stringify(localOrders));
+
+      // Clear cart and close modal
+      cart = [];
+      clearCoupon();
+      deliveryCharge = 0;
+      selectedState = "";
+      renderCart();
+      refreshAddButtons();
+      renderOrders();
+      form.reset();
+      closeModal(checkoutModal);
+      setCartOpen(false);
+
+      // Show success modal with CORRECT email status
+      try {
+        showOrderSuccess({
+          orderId: finalOrderId,
+          items,
+          subtotal: orderSubtotal,
+          discount: orderDiscount,
+          total: orderGrandTotal,
+          delivery: orderGrandTotal - orderTotal,
+          couponCode: activeCouponCode,
+          emailSent,
+          email: confirmationEmail
+        });
+      } catch (e) {
+        console.error("showOrderSuccess error:", e);
+        showToast(`Order ${finalOrderId} placed successfully`, true);
+      }
+      addNotification(`Order ${finalOrderId} placed successfully · ${items} item${items === 1 ? "" : "s"} · ${formatPrice(orderGrandTotal)}`);
+      if (emailSent && confirmationEmail) {
+        showToast(`Confirmation email sent to ${confirmationEmail}`);
+      } else {
+        showToast("Your order has been placed");
+      }
+    });
+  }
+
+  // Attach order edit form submit handler
+  const orderEditForm = document.querySelector("#order-edit-form");
+  if (orderEditForm) {
+    orderEditForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      if (!form.checkValidity()) return form.reportValidity();
+      const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+      const orderId = orderEditModal.dataset.orderId;
+      const address = document.querySelector("#edit-order-address").value.trim();
+      if (!orderId || !address) return showToast("Order ID and address are required", false);
+      const localOrders = JSON.parse(localStorage.getItem(ordersStorageKey) || "[]");
+      const localOrder = localOrders.find((o) => o.id === orderId);
+      if (localOrder) {
+        localOrder.address = address;
+        localStorage.setItem(ordersStorageKey, JSON.stringify(localOrders));
+        renderOrders();
+      }
+      if (user?.id) {
+        try {
+          const response = await fetch(`${API_URL}/orders/${encodeURIComponent(orderId)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: user.id, address }),
+          });
+          const data = await response.json().catch(() => ({ error: "Invalid response" }));
+          if (!response.ok) showToast(data.error || "Could not update order", false);
+        } catch (error) {
+          showToast("Could not connect to server", false);
+        }
+      }
+      closeModal(orderEditModal);
+      showToast("Order address updated");
+    });
+  }
 }
 
 if (document.readyState === "loading") {

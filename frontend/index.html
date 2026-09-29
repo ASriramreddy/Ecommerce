@@ -25,7 +25,6 @@
 <nav aria-label="Store navigation">
         <a class="nav-link active" href="#shop">Home</a
         ><a class="nav-link" href="#products">Categories</a
-        ><a class="nav-link" href="#offers">Offers</a
         ><a class="nav-link" href="#orders">My orders</a
         ><a class="nav-link" href="#referral-section">Referrals</a
         >        <a class="nav-link" href="#spin-win">Spin & Win</a>
@@ -117,7 +116,7 @@
               <option value="price-asc">Price: Low to High</option>
               <option value="price-desc">Price: High to Low</option>
             </select>
-            <button class="view-toggle" id="view-toggle" type="button" aria-label="Toggle view" title="Toggle grid/list view">Γè₧</button>
+            <button class="view-toggle" id="view-toggle" type="button" aria-label="Toggle view" title="Toggle grid/list view">&#9776;</button>
           </div>
         </div>
         <div class="category-filter" id="category-filter"></div>
@@ -163,22 +162,22 @@
             <div class="referral-stats">
               <div class="stat"><span class="stat-value" id="stat-total-referrals">0</span><span class="stat-label">Total Referrals</span></div>
               <div class="stat"><span class="stat-value" id="stat-successful">0</span><span class="stat-label">Successful</span></div>
-              <div class="stat"><span class="stat-value" id="stat-earnings">Γé╣0</span><span class="stat-label">Earned</span></div>
+              <div class="stat"><span class="stat-value" id="stat-earnings">&#8377;0</span><span class="stat-label">Earned</span></div>
             </div>
           </div>
           <div class="referral-benefits">
             <div class="benefit">
-              <span class="benefit-icon">≡ƒÄü</span>
+              <span class="benefit-icon">&#128176;</span>
               <div>
                 <strong>Your friend gets</strong>
-                <span>Γé╣50 off first order</span>
+                <span>&#8377;50 off first order</span>
               </div>
             </div>
             <div class="benefit">
-              <span class="benefit-icon">≡ƒÆ░</span>
+              <span class="benefit-icon">&#128178;</span>
               <div>
                 <strong>You earn</strong>
-                <span>Γé╣100 per referral</span>
+                <span>&#8377;100 per referral</span>
               </div>
             </div>
           </div>
@@ -260,14 +259,14 @@
         <h2 id="order-success-title">Order Confirmed!</h2>
         <p class="success-subtitle">Thank you for shopping with Sriram Store.</p>
         <div class="success-details">
-          <div class="success-row"><span>Order ID</span><strong id="order-success-id">ΓÇö</strong></div>
-          <div class="success-row"><span>Items</span><strong id="order-success-items">ΓÇö</strong></div>
-          <div class="success-row" id="order-success-coupon-row" hidden><span>Coupon</span><strong id="order-success-coupon">ΓÇö</strong></div>
-          <div class="success-row"><span>Subtotal</span><strong id="order-success-subtotal">ΓÇö</strong></div>
-          <div class="success-row" id="order-success-discount-row" hidden><span>Discount</span><strong id="order-success-discount">ΓÇö</strong></div>
-          <div class="success-row"><span>Delivery</span><strong id="order-success-delivery">ΓÇö</strong></div>
-          <div class="success-row"><span>Delivery days</span><strong id="order-success-delivery-days">ΓÇö</strong></div>
-          <div class="success-row success-row-total"><span>Total Paid</span><strong id="order-success-total">ΓÇö</strong></div>
+          <div class="success-row"><span>Order ID</span><strong id="order-success-id">&mdash;</strong></div>
+          <div class="success-row"><span>Items</span><strong id="order-success-items">&mdash;</strong></div>
+          <div class="success-row" id="order-success-coupon-row" hidden><span>Coupon</span><strong id="order-success-coupon">&mdash;</strong></div>
+          <div class="success-row"><span>Subtotal</span><strong id="order-success-subtotal">&mdash;</strong></div>
+          <div class="success-row" id="order-success-discount-row" hidden><span>Discount</span><strong id="order-success-discount">&mdash;</strong></div>
+          <div class="success-row"><span>Delivery</span><strong id="order-success-delivery">&mdash;</strong></div>
+          <div class="success-row"><span>Delivery days</span><strong id="order-success-delivery-days">&mdash;</strong></div>
+          <div class="success-row success-row-total"><span>Total Paid</span><strong id="order-success-total">&mdash;</strong></div>
         </div>
         <div class="success-email" id="order-success-email-box">
           <span class="success-email-icon">&#9993;</span>
@@ -328,11 +327,11 @@
           <div class="review-form" id="review-form">
             <h4>Write a review</h4>
             <div class="star-rating-input" id="star-rating-input">
-              <button type="button" data-rating="1" aria-label="1 star">Γÿà</button>
-              <button type="button" data-rating="2" aria-label="2 stars">Γÿà</button>
-              <button type="button" data-rating="3" aria-label="3 stars">Γÿà</button>
-              <button type="button" data-rating="4" aria-label="4 stars">Γÿà</button>
-              <button type="button" data-rating="5" aria-label="5 stars">Γÿà</button>
+              <button type="button" data-rating="1" aria-label="1 star">&#9733;</button>
+              <button type="button" data-rating="2" aria-label="2 stars">&#9733;</button>
+              <button type="button" data-rating="3" aria-label="3 stars">&#9733;</button>
+              <button type="button" data-rating="4" aria-label="4 stars">&#9733;</button>
+              <button type="button" data-rating="5" aria-label="5 stars">&#9733;</button>
             </div>
             <textarea id="review-comment" rows="3" placeholder="Share your experience with this product..."></textarea>
             <button class="primary-button" id="submit-review" type="button">Submit Review</button>
@@ -410,7 +409,7 @@
               />
               <div class="pincode-popup" id="pincode-popup" aria-hidden="true">
                 <div class="pincode-popup-content">
-                  <span class="pincode-popup-icon">≡ƒôì</span>
+                  <span class="pincode-popup-icon">&#128205;</span>
                   <div class="pincode-popup-details">
                     <strong id="pincode-area"></strong>
                     <span id="pincode-district"></span>
@@ -548,11 +547,11 @@
             <div class="order-tracking" id="order-tracking" aria-label="Order tracking"></div>
             <div class="order-rate-actions" id="order-rate-actions"></div>
             <div class="order-details-row"><span>Items</span><strong id="order-details-items"></strong></div>
-            <div class="order-details-row"><span>Coupon</span><strong id="order-details-coupon">ΓÇö</strong></div>
-            <div class="order-details-row"><span>Discount</span><strong id="order-details-discount">ΓÇö</strong></div>
+            <div class="order-details-row"><span>Coupon</span><strong id="order-details-coupon">&mdash;</strong></div>
+            <div class="order-details-row"><span>Discount</span><strong id="order-details-discount">&mdash;</strong></div>
             <div class="order-details-row"><span>Address</span><strong id="order-details-address"></strong></div>
             <div class="order-details-row"><span>Delivery charge</span><strong id="order-details-delivery"></strong></div>
-            <div class="order-details-row"><span>Delivery days</span><strong id="order-details-delivery-days">ΓÇö</strong></div>
+            <div class="order-details-row"><span>Delivery days</span><strong id="order-details-delivery-days">&mdash;</strong></div>
             <div class="order-details-row order-details-total"><span>Total</span><strong id="order-details-total"></strong></div>
           </div>
 <button class="secondary-button" id="request-return" type="button">
@@ -795,7 +794,7 @@
         <div class="spin-wheel-header">
           <p class="eyebrow">Daily Reward</p>
           <h2 id="spin-wheel-title">Spin & Win</h2>
-          <p class="spin-subtitle">Spin the wheel every day to win coupons, points & exclusive rewards</p>
+          <p class="spin-subtitle">One spin per day — win coupons, points & exclusive rewards</p>
         </div>
         <div class="spin-wheel-wrapper">
           <div class="spin-wheel-pointer"></div>
