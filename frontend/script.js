@@ -2,7 +2,7 @@ const API_BASE = "http://localhost:3000";
 
 const api = {
     async get(path) {
-        const response = await fetch(API_BASE + path);
+        const response = await fetch(API_URL + path);
 
         if (!response.ok) {
             throw new Error(`API error: ${response.status}`);
@@ -11,7 +11,7 @@ const api = {
         return response.json();
     }
 };
-const API_URL = "http://localhost:3000";
+const API_URL = "https://ecommerce-1-r5m4.onrender.com";
 let products = [];
 let cart = [];
 let couponApplied = false;
