@@ -669,6 +669,7 @@ body {
     <h1>🎧 Customer Support Dashboard</h1>
     <div class="header-actions">
       <button class="broadcast-btn" id="broadcast-btn" type="button" onclick="openBroadcastModal()">📢 Send Notification</button>
+      <a href="admin-login.html" style="text-decoration:none;"><button style="background:#2563eb;color:white;border:0;padding:9px 15px;border-radius:7px;cursor:pointer;">Admin Panel</button></a>
       <button onclick="logout()">Logout</button>
     </div>
   </header>
@@ -812,13 +813,9 @@ body {
 
 <script>
 
-/*
-====================================================
-CHANGE THIS TO YOUR RENDER BACKEND URL
-====================================================
-*/
-
-const API_BASE = "http://localhost:3000";
+const API_BASE = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    ? "http://localhost:3000"
+    : "https://ecommerce-1-r5m4.onrender.com";
 const API = API_BASE;
 
 
@@ -847,17 +844,17 @@ const ticketCategories = [
 
 function getToken() {
 
-    return (
-        localStorage.getItem("sriram-admin-token") ||
-        localStorage.getItem("adminToken") ||
-        localStorage.getItem("admin_token") ||
-        sessionStorage.getItem("adminToken")
-    );
-
+    return localStorage.getItem("sriram-admin-token");
 }
 
+function getCustomerUser() {
+    try {
+        const user = localStorage.getItem("sriram-store-user");
+        return user ? JSON.parse(user) : null;
+    } catch { return null; }
+}
 
-/* apiRequest(...) REQUEST */
+/* apiRequest(...) REQUEST - Admin API with token */
 
 async function apiRequest(url, options = {}) {
 
@@ -878,7 +875,7 @@ async function apiRequest(url, options = {}) {
     });
 
     if (response.status === 401) {
-        alert("Admin session expired. Please login again.");
+        // Token invalid/expired - clear and redirect silently
         logout();
         return null;
     }
@@ -892,8 +889,30 @@ async function apiRequest(url, options = {}) {
     return data;
 }
 
+/* customerApiRequest(...) REQUEST - Customer API (no admin token needed) */
 
-/* LOAD TICKETS */
+async function customerApiRequest(url, options = {}) {
+    const headers = {
+        "Content-Type": "application/json",
+        ...(options.headers || {})
+    };
+
+    const response = await fetch(API_BASE + url, {
+        ...options,
+        headers
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+        throw new Error(data.error || "Request failed");
+    }
+
+    return data;
+}
+
+
+/* LOAD TICKETS - Admin */
 
 async function loadTickets() {
 
@@ -918,6 +937,38 @@ async function loadTickets() {
         document.getElementById("ticketList").innerHTML =
             `<div class="empty">
                 Could not load support tickets.<br>
+                ${error.message}
+            </div>`;
+    }
+}
+
+/* LOAD TICKETS - Customer */
+
+async function loadCustomerTickets() {
+
+    const customerUser = getCustomerUser();
+    if (!customerUser?.email) {
+        document.getElementById("ticketList").innerHTML =
+            `<div class="empty">Please log in to view your tickets.</div>`;
+        return;
+    }
+
+    try {
+        const url = `/support/user/${encodeURIComponent(customerUser.email)}`;
+        const data = await customerApiRequest(url);
+
+        if (!data) return;
+
+        tickets = Array.isArray(data) ? data : [];
+        activeTicketStatus = document.getElementById("statusFilter").value || "all";
+        updateStats();
+        renderTickets();
+
+    } catch (error) {
+        console.error(error);
+        document.getElementById("ticketList").innerHTML =
+            `<div class="empty">
+                Could not load your tickets.<br>
                 ${error.message}
             </div>`;
     }
@@ -1314,8 +1365,8 @@ function renderTickets() {
                 tabindex="0"
                 role="button"
                 aria-label="Open ticket #${ticket.id} conversation"
-                onclick="openTicket(${ticket.id})"
-                onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openTicket(${ticket.id}); }"
+                onclick="window.isCustomerMode ? openCustomerTicket(${ticket.id}) : openTicket(${ticket.id})"
+                onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); window.isCustomerMode ? openCustomerTicket(${ticket.id}) : openTicket(${ticket.id}); }"
             >
                 <td class="ticket-id">#${ticket.id}</td>
                 <td class="ticket-customer">
@@ -1515,8 +1566,7 @@ function printTickets() {
     pdfDocument.autoPrint();
     pdfDocument.output("dataurlnewwindow");
 }
-
-/* OPEN TICKET */
+/* OPEN TICKET - Admin */
 
 async function openTicket(id) {
 
@@ -1549,8 +1599,37 @@ async function openTicket(id) {
     }
 }
 
+/* OPEN TICKET - Customer */
 
-/* CONVERSATION */
+async function openCustomerTicket(id) {
+
+    try {
+
+        const ticket = await customerApiRequest(`/support/${id}/messages`);
+
+        if (!ticket) return;
+
+        selectedTicket = { id, messages: ticket };
+
+        renderTickets();
+
+        renderCustomerConversation(ticket);
+
+        const conversationPanel = document.getElementById("conversationPanel");
+        if (conversationPanel) {
+            conversationPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+            conversationPanel.focus({ preventScroll: true });
+        }
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert(error.message);
+    }
+}
+
+/* CONVERSATION - Admin */
 
 function renderConversation(ticket, replies) {
 
@@ -1576,6 +1655,7 @@ function renderConversation(ticket, replies) {
             </h2>
 
             <div class="customer-info">
+
                 <strong>${escapeHtml(ticket.name)}</strong>
                 · ${escapeHtml(ticket.email)}
                 ${ticket.order_id
@@ -1584,7 +1664,7 @@ function renderConversation(ticket, replies) {
                 · ${escapeHtml(ticket.category)}
             </div>
 
-            </div>
+        </div>
 
         <div class="messages">
 
@@ -1666,7 +1746,65 @@ function renderConversation(ticket, replies) {
 }
 
 
-/* SEND REPLY */
+/* CONVERSATION - Customer */
+
+function renderCustomerConversation(messages) {
+
+    const content = document.getElementById("conversationContent");
+
+    content.innerHTML = `
+
+        <div class="conversation-header">
+
+            <h2>
+                Ticket #${selectedTicket.id}
+            </h2>
+
+            <div class="customer-info">
+                <strong>${escapeHtml(messages[0]?.message?.name || "Customer")}</strong>
+            </div>
+
+        </div>
+
+        <div class="messages">
+
+            ${messages.map(message => `
+                <div class="message ${message.is_customer_reply ? "customer" : "admin"}">
+
+                    <div class="message-label">
+                        ${message.is_customer_reply ? "YOU" : "SUPPORT TEAM"}
+                    </div>
+
+                    <div>
+                        ${escapeHtml(message.message)}
+                    </div>
+
+                    <div class="message-time">
+                        ${formatDate(message.created_at)}
+                    </div>
+
+</div>
+            `).join("")}
+
+        </div>
+
+        <div class="reply-box">
+
+            <textarea
+                id="customerReplyMessage"
+                placeholder="Write your reply..."
+            ></textarea>
+
+            <div class="reply-actions">
+                <button onclick="sendCustomerReply()">Send Reply</button>
+            </div>
+
+        </div>
+    `;
+}
+
+
+/* SEND REPLY - Admin */
 
 async function sendReply() {
 
@@ -1709,6 +1847,43 @@ async function sendReply() {
     }
 }
 
+/* SEND REPLY - Customer */
+
+async function sendCustomerReply() {
+
+    if (!selectedTicket?.id) return;
+
+    const customerUser = getCustomerUser();
+    if (!customerUser?.id) {
+        alert("Please log in to reply");
+        return;
+    }
+
+    const textarea = document.getElementById("customerReplyMessage");
+    const message = textarea.value.trim();
+
+    if (!message) {
+        alert("Please enter a reply.");
+        return;
+    }
+
+    try {
+        await customerApiRequest(
+            `/support/${selectedTicket.id}/reply`,
+            {
+                method: "POST",
+                body: JSON.stringify({ userId: customerUser.id, message })
+            }
+        );
+
+        textarea.value = "";
+        await openCustomerTicket(selectedTicket.id);
+        alert("Reply sent successfully.");
+
+    } catch (error) {
+        alert(error.message);
+    }
+}
 
 /* UPDATE STATUS */
 
@@ -1749,9 +1924,6 @@ async function updateStatus() {
 function logout() {
 
     localStorage.removeItem("sriram-admin-token");
-    localStorage.removeItem("adminToken");
-    localStorage.removeItem("admin_token");
-    sessionStorage.removeItem("adminToken");
 
     window.location.href = "admin-login.html";
 }
@@ -1825,9 +1997,36 @@ async function sendBroadcastNotification() {
 
 /* START */
 
-if (!getToken()) {
-    window.location.href = "admin-login.html?redirect=" + encodeURIComponent("admin-support.html");
+console.log("Support dashboard loading...", getToken());
+
+const customerUser = getCustomerUser();
+const hasAdminToken = getToken();
+
+if (!hasAdminToken) {
+    if (customerUser) {
+        // Customer logged in but no admin token - load customer view
+        console.log("Customer detected, loading customer tickets");
+        window.isCustomerMode = true;
+        // Hide admin-only elements
+        document.getElementById("broadcast-btn")?.style.setProperty("display", "none");
+        document.getElementById("statusFilter")?.closest(".admin-form")?.style.setProperty("display", "none");
+        loadCustomerTickets();
+    } else {
+        // Not logged in at all - redirect to admin login
+        console.log("No token found, redirecting to login");
+        window.location.href = "admin-login.html?redirect=" + encodeURIComponent("admin-support.html");
+    }
+} else if (customerUser && !hasAdminToken) {
+    // Customer logged in but no admin token - load customer view
+    console.log("Customer detected, loading customer tickets");
+    window.isCustomerMode = true;
+    // Hide admin-only elements
+    document.getElementById("broadcast-btn")?.style.setProperty("display", "none");
+    document.getElementById("statusFilter")?.closest(".admin-form")?.style.setProperty("display", "none");
+    loadCustomerTickets();
 } else {
+    console.log("Admin token found, loading tickets");
+    window.isCustomerMode = false;
     loadTickets();
 }
 

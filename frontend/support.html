@@ -116,11 +116,11 @@
             </div>
             <div>
               <label for="support-name">Name <span style="color:var(--danger);">*</span></label>
-              <input id="support-name" type="text" placeholder="Your full name" required autocomplete="off" readonly style="background: #f5f5f5;" />
+              <input id="support-name" type="text" placeholder="Your full name" required autocomplete="off" />
             </div>
             <div>
               <label for="support-email">Email <span style="color:var(--danger);">*</span></label>
-              <input id="support-email" type="email" placeholder="you@example.com" required autocomplete="off" readonly style="background: #f5f5f5;" />
+              <input id="support-email" type="email" placeholder="you@example.com" required autocomplete="off" />
             </div>
             <div>
               <label for="support-category">Category</label>
@@ -235,9 +235,9 @@
         .replace(/&/g, "&")
         .replace(/</g, "<")
         .replace(/>/g, ">")
-        .replace(/"/g, "\"")
-        .replace(/'/g, "&#039;");
-}
+        .replace(/"/g, "")
+        .replace(/'/g, "&#039;")
+};
 
       function formatDate(date) {
         if (!date) return "";
@@ -253,14 +253,11 @@
         status.className = "support-status";
         
         const user = JSON.parse(localStorage.getItem("sriram-store-user") || "null");
-        // For testing: use fallback user ID if no logged in user (allugulasriram@gmail.com has userId 19 with orders)
-        const testUserId = user?.id || 19;
-        const testEmail = user?.email || "allugulasriram@gmail.com";
         
         const payload = {
-          userId: testUserId,
+          userId: user?.id || 0, // 0 for guest
           name: document.querySelector("#support-name").value.trim(),
-          email: document.querySelector("#support-email").value.trim() || testEmail,
+          email: document.querySelector("#support-email").value.trim(),
           orderId: document.querySelector("#support-order").value.trim(),
           category: document.querySelector("#support-category").value,
           message: document.querySelector("#support-message").value.trim()
@@ -289,31 +286,25 @@
       
       document.addEventListener("DOMContentLoaded", () => {
         const user = JSON.parse(localStorage.getItem("sriram-store-user") || "null");
-        // For testing: use fallback user ID if no logged in user (allugulasriram@gmail.com has userId 19 with orders)
-        const testUserId = user?.id || 19;
-        const testEmail = user?.email || "allugulasriram@gmail.com";
-        const testName = user?.name || "sriram";
         
-        // Load user's order options for the dropdown
-        if (testUserId) {
-          loadUserOrderOptions(testUserId);
-        }
+        // Load user's order options for the dropdown (for both logged-in and guest users)
+        loadUserOrderOptions(user?.id || 0);
         
-        // Load user's tickets
-        if (testEmail) {
-          loadUserTickets(testEmail);
-        }
-        
-        // Auto-fill name and email from user data
-        const nameInput = document.querySelector("#support-name");
-        const emailInput = document.querySelector("#support-email");
-        if (user) {
+        if (user?.id) {
+          // Load user's tickets
+          loadUserTickets(user.email);
+          
+          // Auto-fill name and email from user data
+          const nameInput = document.querySelector("#support-name");
+          const emailInput = document.querySelector("#support-email");
           if (nameInput && user.name) nameInput.value = user.name;
           if (emailInput && user.email) emailInput.value = user.email;
-        } else if (testName && testEmail) {
-          // For fallback testing
-          if (nameInput && !nameInput.value) nameInput.value = testName;
-          if (emailInput && !emailInput.value) emailInput.value = testEmail;
+        } else {
+          // Guest user - show login prompt for tickets section
+          const list = document.querySelector("#tickets-list");
+          if (list) {
+            list.innerHTML = '<div style="padding: 40px 20px; text-align: center; color: #767b76;">Please <a href="index.html" style="color: var(--green);">log in</a> to view your support tickets.</div>';
+          }
         }
       });
 
@@ -391,6 +382,7 @@
                 <th style="padding: 12px 14px; border-bottom: 1px solid #dbe3ee; background: #eef5ff; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-align: left; white-space: nowrap;">Ticket ID</th>
                 <th style="padding: 12px 14px; border-bottom: 1px solid #dbe3ee; background: #eef5ff; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-align: left; white-space: nowrap;">Category</th>
                 <th style="padding: 12px 14px; border-bottom: 1px solid #dbe3ee; background: #eef5ff; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-align: left; white-space: nowrap;">Order ID</th>
+                <th style="padding: 12px 14px; border-bottom: 1px solid #dbe3ee; background: #eef5ff; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-align: left;">Message</th>
                 <th style="padding: 12px 14px; border-bottom: 1px solid #dbe3ee; background: #eef5ff; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-align: left; white-space: nowrap;">Status</th>
                 <th style="padding: 12px 14px; border-bottom: 1px solid #dbe3ee; background: #eef5ff; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-align: left; white-space: nowrap;">Created</th>
                 <th style="padding: 12px 14px; border-bottom: 1px solid #dbe3ee; background: #eef5ff; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-align: left; white-space: nowrap;">Action</th>
@@ -403,11 +395,13 @@
                                    ticket.status === 'in_progress' ? 'style="background: #fef3c7; color: #92400e;"' :
                                    ticket.status === 'resolved' ? 'style="background: #dcfce7; color: #166534;"' :
                                    'style="background: #e5e7eb; color: #374151;"';
+                const messagePreview = escapeHtml(ticket.message || "").slice(0, 80) + (ticket.message && ticket.message.length > 80 ? "..." : "");
                 return `
                 <tr style="${isSelected} cursor: pointer; transition: background .15s ease;" onclick="openTicket(${ticket.id})" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='${isSelected ? '#eff6ff' : 'transparent'}'">
                   <td style="padding: 13px 14px; border-bottom: 1px solid #edf0f4; color: #374151;"><strong style="color: #2563eb;">#${ticket.id}</strong></td>
                   <td style="padding: 13px 14px; border-bottom: 1px solid #edf0f4; color: #374151;">${escapeHtml(getCategoryLabel(ticket.category))}</td>
                   <td style="padding: 13px 14px; border-bottom: 1px solid #edf0f4; color: #374151;">${ticket.order_id ? escapeHtml(ticket.order_id) : '-'}</td>
+                  <td style="padding: 13px 14px; border-bottom: 1px solid #edf0f4; color: #374151; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${messagePreview}</td>
                   <td style="padding: 13px 14px; border-bottom: 1px solid #edf0f4;"><span ${statusClass} style="padding: 4px 8px; border-radius: 20px; font-size: 11px; white-space: nowrap;">${escapeHtml(formatStatus(ticket.status))}</span></td>
                   <td style="padding: 13px 14px; border-bottom: 1px solid #edf0f4; color: #6b7280; font-size: 12px;">${formatDate(ticket.created_at)}</td>
                   <td style="padding: 13px 14px; border-bottom: 1px solid #edf0f4; color: #2563eb; font-weight: 600;">View →</td>
@@ -537,16 +531,23 @@
           }
 
           const user = JSON.parse(localStorage.getItem("sriram-store-user") || "null");
-          if (!user?.id) {
-            showToast("Please log in to reply", false);
-            return;
-          }
-
+          
           try {
+            const payload = { message };
+            if (user?.id) {
+              payload.userId = user.id;
+            } else {
+              // For guest users, send email for verification
+              const ticket = allTickets.find(t => t.id === ticketId);
+              if (ticket?.email) {
+                payload.email = ticket.email;
+              }
+            }
+            
             const response = await fetch(`${API_URL}/support/${ticketId}/reply`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ userId: user.id, message })
+              body: JSON.stringify(payload)
             });
             const data = await response.json().catch(() => ({}));
             if (response.ok) {
@@ -574,7 +575,15 @@
       // Load order options for a specific user ID
       async function loadUserOrderOptions(userId) {
         const select = document.querySelector("#support-order");
-        if (!select || !userId) return;
+        if (!select) return;
+
+        // If guest user (userId = 0 or not provided), replace select with text input
+        if (!userId) {
+          const parent = select.parentElement;
+          parent.innerHTML = '<label for="support-order">Order ID <span style="color:var(--danger);">*</span></label>' +
+            '<input id="support-order" type="text" placeholder="Enter your Order ID" required style="width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: #fff; font-size: 13px;">';
+          return;
+        }
 
         select.innerHTML = '<option value="">Loading your orders...</option>';
         select.disabled = true;

@@ -133,6 +133,16 @@ function parseProductIds(value) {
     }
 }
 
+// Calculate spins earned based on order amount
+function calculateSpinsForAmount(amount) {
+    const amt = Number(amount);
+    if (amt >= 3000) return 5;
+    if (amt >= 2000) return 3;
+    if (amt >= 1000) return 2;
+    if (amt >= 500) return 1;
+    return 0;
+}
+
 const uploadDirectory = path.join(__dirname, "..", "public", "images", "uploads");
 
 fs.mkdirSync(uploadDirectory, { recursive: true });
@@ -720,6 +730,26 @@ const dailyRewardsReady = databaseReady.then(async () => {
     throw error;
 });
 
+const userSpinAttemptsReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS user_spin_attempts (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            earned_spins INT NOT NULL DEFAULT 0,
+            used_spins INT NOT NULL DEFAULT 0,
+            last_calculated_order_id VARCHAR(20) NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE KEY unique_user_spins (user_id)
+        )
+    `);
+    console.log("✅ User spin attempts table is ready");
+}).catch((error) => {
+    console.error("❌ User spin attempts table setup failed:", error.message);
+    throw error;
+});
+
 const passwordResetReady = databaseReady.then(async () => {
     const dbPromise = db.promise();
     await dbPromise.query(`
@@ -757,13 +787,14 @@ const spinPrizesReady = databaseReady.then(async () => {
     const [rows] = await dbPromise.query("SELECT COUNT(*) AS count FROM spin_prizes");
     if (rows[0].count === 0) {
         const prizes = [
-            ["10 Points", "points", "10", 30],
-            ["20 Points", "points", "20", 15],
-            ["5% Coupon", "coupon", "SPIN5", 20],
-            ["10% Coupon", "coupon", "SPIN10", 15],
+            ["5 Points", "points", "5", 20],
+            ["10 Points", "points", "10", 15],
+            ["25 Points", "points", "25", 15],
             ["50 Points", "points", "50", 10],
-            ["25% Coupon", "coupon", "SPIN25", 5],
-            ["Jackpot 100 Points", "points", "100", 5]
+            ["₹20 Coupon", "coupon", "SPIN20", 15],
+            ["₹50 Coupon", "coupon", "SPIN50", 10],
+            ["₹100 Coupon", "coupon", "SPIN100", 5],
+            ["Better Luck Next Time", "none", "none", 20]
         ];
         const placeholders = prizes.map(() => "(?, ?, ?, ?)").join(", ");
         const values = prizes.flatMap(([name, type, value, prob]) => [name, type, value, prob]);
@@ -778,9 +809,57 @@ const spinPrizesReady = databaseReady.then(async () => {
     throw error;
 });
 
-Promise.all([inventoryReady, profilesReady, ordersReady, deliveryChargesReady, couponsReady, festivalsReady, offersReady, supportReady, notificationsReady, reviewsReady, dailyRewardsReady, passwordResetReady, spinPrizesReady])
+const adminSessionsReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS admin_sessions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            token VARCHAR(64) NOT NULL UNIQUE,
+            type ENUM('admin', 'support') NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_token (token),
+            INDEX idx_expires (expires_at)
+        )
+    `);
+    console.log("✅ Admin sessions table is ready");
+}).catch((error) => {
+    console.error("❌ Admin sessions table setup failed:", error.message);
+    throw error;
+});
+
+Promise.all([inventoryReady, profilesReady, ordersReady, deliveryChargesReady, couponsReady, festivalsReady, offersReady, supportReady, notificationsReady, reviewsReady, dailyRewardsReady, passwordResetReady, spinPrizesReady, adminSessionsReady, userSpinAttemptsReady])
     .then(() => console.log("✅ All tables are ready"))
     .catch((error) => console.error("❌ Schema setup encountered errors:", error.message));
+
+// Load existing valid admin tokens from database on startup
+adminSessionsReady.then(async () => {
+    try {
+        const [rows] = await db.promise().query(
+            "SELECT token FROM admin_sessions WHERE expires_at > NOW()"
+        );
+        for (const row of rows) {
+            adminTokens.add(row.token);
+            supportAdminTokens.add(row.token);
+        }
+        console.log(`✅ Loaded ${rows.length} valid admin session(s) from database`);
+    } catch (e) {
+        console.error("Failed to load admin sessions:", e.message);
+    }
+});
+
+// Cleanup expired admin sessions periodically (daily)
+setInterval(async () => {
+    try {
+        await adminSessionsReady;
+        const [result] = await db.promise().query("DELETE FROM admin_sessions WHERE expires_at <= NOW()");
+        if (result.affectedRows > 0) {
+            console.log(`🧹 Cleaned up ${result.affectedRows} expired admin session(s)`);
+        }
+    } catch (e) {
+        console.error("Admin session cleanup failed:", e.message);
+    }
+}, 24 * 60 * 60 * 1000); // Run daily
 
 
 // ===============================
@@ -1193,8 +1272,37 @@ app.patch("/auth/me", async (req, res) => {
 
 function requireAdmin(req, res, next) {
     const token = req.headers.authorization?.replace("Bearer ", "");
-    if (!token || (!adminTokens.has(token) && !supportAdminTokens.has(token))) return res.status(401).json({ error: "Admin authentication required" });
-    next();
+    if (!token) return res.status(401).json({ error: "Admin authentication required" });
+    
+    // Check in-memory sets first (fast path)
+    if (adminTokens.has(token) || supportAdminTokens.has(token)) return next();
+    
+    // Fallback: check database for persistent tokens
+    checkAdminTokenFromDB(token)
+        .then(valid => {
+            if (valid) next();
+            else res.status(401).json({ error: "Admin authentication required" });
+        })
+        .catch(() => res.status(401).json({ error: "Admin authentication required" }));
+}
+
+async function checkAdminTokenFromDB(token) {
+    try {
+        await adminSessionsReady;
+        const [rows] = await db.promise().query(
+            "SELECT token FROM admin_sessions WHERE token = ? AND expires_at > NOW()",
+            [token]
+        );
+        if (rows.length) {
+            // Cache in memory for faster subsequent checks
+            adminTokens.add(token);
+            supportAdminTokens.add(token);
+            return true;
+        }
+    } catch (e) {
+        console.error("Admin token DB check failed:", e.message);
+    }
+    return false;
 }
 
 async function createUserNotification(userId, message) {
@@ -1307,11 +1415,28 @@ app.patch("/admin/orders/:id/status", requireAdmin, async (req, res) => {
     if (!id || !allowed.includes(status)) return res.status(400).json({ error: "Valid order id and status are required" });
     try {
         await ordersReady;
-        const [[order]] = await db.promise().query("SELECT user_id FROM orders WHERE id = ?", [id]);
+        await userSpinAttemptsReady;
+        const [[order]] = await db.promise().query("SELECT user_id, Total_Amount FROM orders WHERE id = ?", [id]);
         if (!order) return res.status(404).json({ error: "Order not found" });
+        const wasDelivered = order.status === "delivered";
         const [result] = await db.promise().query("UPDATE orders SET status = ? WHERE id = ?", [status, id]);
         if (!result.affectedRows) return res.status(404).json({ error: "Order not found" });
         await createUserNotification(order.user_id, `Order ${id} status updated to ${status}.`);
+
+        // Award spins when order is marked as delivered
+        if (!wasDelivered && status === "delivered") {
+            const spinsToAward = calculateSpinsForAmount(order.Total_Amount);
+            if (spinsToAward > 0) {
+                await db.promise().query(
+                    `INSERT INTO user_spin_attempts (user_id, earned_spins, last_calculated_order_id)
+                     VALUES (?, ?, ?)
+                     ON DUPLICATE KEY UPDATE earned_spins = earned_spins + VALUES(earned_spins), last_calculated_order_id = VALUES(last_calculated_order_id)`,
+                    [order.user_id, spinsToAward, id]
+                );
+                await createUserNotification(order.user_id, `You earned ${spinsToAward} spin${spinsToAward > 1 ? "s" : ""} from order ${id}!`);
+            }
+        }
+
         res.json({ id, status });
     } catch (error) {
         console.error("Order status update failed:", error.message);
@@ -1522,7 +1647,18 @@ app.post("/admin/login", async (req, res) => {
 
     if (email === adminEmail && password === adminPassword) {
         const token = crypto.randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+        try {
+            await adminSessionsReady;
+            await db.promise().query(
+                "INSERT INTO admin_sessions (token, type, expires_at) VALUES (?, 'admin', ?)",
+                [token, expiresAt]
+            );
+        } catch (e) {
+            console.error("Failed to store admin session:", e.message);
+        }
         adminTokens.add(token);
+        supportAdminTokens.add(token); // Allow admin token to access support endpoints
         return res.json({ token });
     }
 
@@ -1530,7 +1666,18 @@ app.post("/admin/login", async (req, res) => {
     const supportAdminPassword = String(process.env.SUPPORT_ADMIN_PASSWORD || "support123");
     if (email === supportAdminEmail && password === supportAdminPassword) {
         const token = crypto.randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+        try {
+            await adminSessionsReady;
+            await db.promise().query(
+                "INSERT INTO admin_sessions (token, type, expires_at) VALUES (?, 'support', ?)",
+                [token, expiresAt]
+            );
+        } catch (e) {
+            console.error("Failed to store support admin session:", e.message);
+        }
         supportAdminTokens.add(token);
+        adminTokens.add(token); // Allow support token to access admin endpoints
         return res.json({ token });
     }
 
@@ -2421,27 +2568,32 @@ app.post("/support", async (req, res) => {
     const name = String(body.name || "").trim();
     const email = String(body.email || "").trim();
 
-    if (!Number.isInteger(userId) || userId < 1 || !name || !email || !orderId || !category || !message) {
+    if ((!Number.isInteger(userId) || userId < 1) && (!name || !email)) {
         return res.status(400).json({ error: "Name, email, Order ID, category, and message are required" });
+    }
+    if (!orderId || !category || !message) {
+        return res.status(400).json({ error: "Order ID, category, and message are required" });
     }
 
     try {
         await databaseReady;
-        const [users] = await db.promise().query("SELECT name, email FROM users WHERE id = ?", [userId]);
-        if (!users[0]) return res.status(404).json({ error: "User not found" });
-        const user = users[0];
+        let user = null;
+        if (Number.isInteger(userId) && userId >= 1) {
+            const [users] = await db.promise().query("SELECT name, email FROM users WHERE id = ?", [userId]);
+            if (users[0]) user = users[0];
+        }
 
         await supportReady;
         const [result] = await db.promise().query(
             "INSERT INTO support_tickets (name, email, phone, order_id, category, message) VALUES (?, ?, ?, ?, ?, ?)",
-            [name || user.name, email || user.email, null, orderId, category, message]
+            [name || user?.name, email || user?.email, null, orderId, category, message]
         );
 
         let emailSent = false;
         let emailError = null;
         if (emailTransporter) {
             try {
-                await sendSupportEmail({ to: email || user.email, name: name || user.name, phone: null, orderId, category, message });
+                await sendSupportEmail({ to: email || user?.email, name: name || user?.name, phone: null, orderId, category, message });
                 emailSent = true;
             } catch (err) {
                 emailSent = false;
@@ -2454,8 +2606,8 @@ app.post("/support", async (req, res) => {
 
         res.status(201).json({
             id: result.insertId,
-            name: name || user.name,
-            email: email || user.email,
+            name: name || user?.name,
+            email: email || user?.email,
             phone: null,
             orderId,
             category,
@@ -2512,14 +2664,20 @@ app.post("/support/:id/reply", async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ticket id" });
     const userId = Number(req.body?.userId);
+    const email = String(req.body?.email || "").trim().toLowerCase();
     const message = String(req.body?.message || "").trim();
-    if (!Number.isInteger(userId) || userId < 1 || !message) return res.status(400).json({ error: "User ID and reply message are required" });
+    if (!message) return res.status(400).json({ error: "Reply message is required" });
 
     try {
         await databaseReady;
-        const [users] = await db.promise().query("SELECT email FROM users WHERE id = ?", [userId]);
-        if (!users[0]) return res.status(404).json({ error: "User not found" });
-        const userEmail = users[0].email;
+        let userEmail = null;
+        if (Number.isInteger(userId) && userId >= 1) {
+            const [users] = await db.promise().query("SELECT email FROM users WHERE id = ?", [userId]);
+            if (users[0]) userEmail = users[0].email;
+        } else if (email) {
+            userEmail = email;
+        }
+        if (!userEmail) return res.status(400).json({ error: "User ID or email is required" });
 
         await supportReady;
         const [tickets] = await db.promise().query("SELECT * FROM support_tickets WHERE id = ? AND email = ?", [id, userEmail]);
@@ -2839,5 +2997,188 @@ app.get("/api/spin/prizes", async (req, res) => {
     } catch (error) {
         console.error("Spin prizes fetch failed:", error.message);
         res.status(503).json({ error: "Could not load prizes" });
+    }
+});
+
+// Award spins based on delivered order
+app.post("/api/spin/award", async (req, res) => {
+    const userId = Number(req.body?.userId);
+    const orderId = String(req.body?.orderId || "").trim();
+    if (!Number.isInteger(userId) || userId < 1 || !orderId) {
+        return res.status(400).json({ error: "Valid user id and order id are required" });
+    }
+    try {
+        await databaseReady;
+        await userSpinAttemptsReady;
+        await ordersReady;
+
+        // Check if order exists, is delivered, and belongs to user
+        const [[order]] = await db.promise().query(
+            "SELECT id, user_id, Total_Amount, status FROM orders WHERE id = ? AND user_id = ?",
+            [orderId, userId]
+        );
+        if (!order) return res.status(404).json({ error: "Order not found" });
+        if (order.status !== "delivered") return res.status(400).json({ error: "Order not delivered yet" });
+
+        // Check if already calculated for this order
+        const [[existing]] = await db.promise().query(
+            "SELECT last_calculated_order_id FROM user_spin_attempts WHERE user_id = ?",
+            [userId]
+        );
+        if (existing && existing.last_calculated_order_id === orderId) {
+            return res.json({ success: true, message: "Spins already awarded for this order", spinsAwarded: 0 });
+        }
+
+        const spinsToAward = calculateSpinsForAmount(order.Total_Amount);
+        if (spinsToAward === 0) {
+            return res.json({ success: true, message: "Order amount below ₹500, no spins awarded", spinsAwarded: 0 });
+        }
+
+        // Update or insert user spin attempts
+        await db.promise().query(
+            `INSERT INTO user_spin_attempts (user_id, earned_spins, last_calculated_order_id)
+             VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE earned_spins = earned_spins + VALUES(earned_spins), last_calculated_order_id = VALUES(last_calculated_order_id)`,
+            [userId, spinsToAward, orderId]
+        );
+
+        await createUserNotification(userId, `You earned ${spinsToAward} spin${spinsToAward > 1 ? "s" : ""} from order ${orderId}!`);
+        res.json({ success: true, spinsAwarded: spinsToAward, message: `Earned ${spinsToAward} spin${spinsToAward > 1 ? "s" : ""}!` });
+    } catch (error) {
+        console.error("Award spins failed:", error.message);
+        res.status(503).json({ error: "Could not award spins" });
+    }
+});
+
+// Get user's available spins
+app.get("/api/spin/attempts", async (req, res) => {
+    const userId = Number(req.query.userId);
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    try {
+        await userSpinAttemptsReady;
+        const [[attempts]] = await db.promise().query(
+            "SELECT earned_spins, used_spins FROM user_spin_attempts WHERE user_id = ?",
+            [userId]
+        );
+        const earned = attempts?.earned_spins || 0;
+        const used = attempts?.used_spins || 0;
+        const available = Math.max(0, earned - used);
+        res.json({ earned, used, available });
+    } catch (error) {
+        console.error("Spin attempts fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load spin attempts" });
+    }
+});
+
+// Spin the wheel (uses available spins)
+app.post("/api/spin/wheel", async (req, res) => {
+    const userId = Number(req.body?.userId);
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    try {
+        await userSpinAttemptsReady;
+        await spinPrizesReady;
+        await databaseReady;
+        const [[user]] = await db.promise().query("SELECT name, email FROM users WHERE id = ?", [userId]);
+        if (!user) return res.status(404).json({ error: "User not found" });
+
+        // Check available spins
+        const [[attempts]] = await db.promise().query(
+            "SELECT earned_spins, used_spins FROM user_spin_attempts WHERE user_id = ?",
+            [userId]
+        );
+        const earned = attempts?.earned_spins || 0;
+        const used = attempts?.used_spins || 0;
+        const available = Math.max(0, earned - used);
+        if (available <= 0) {
+            return res.status(400).json({ error: "No spins available. Make a purchase of ₹500+ to earn spins!" });
+        }
+
+        const [prizes] = await db.promise().query(
+            "SELECT id, name, type, value, probability FROM spin_prizes WHERE is_active = 1 AND probability > 0"
+        );
+        if (!prizes.length) return res.status(503).json({ error: "No prizes available" });
+        const totalWeight = prizes.reduce((sum, p) => sum + Number(p.probability), 0);
+        let random = Math.random() * totalWeight;
+        let selected = prizes[0];
+        for (const prize of prizes) {
+            random -= Number(prize.probability);
+            if (random <= 0) { selected = prize; break; }
+        }
+
+        // Increment used spins
+        await db.promise().query(
+            `INSERT INTO user_spin_attempts (user_id, used_spins) VALUES (?, 1)
+             ON DUPLICATE KEY UPDATE used_spins = used_spins + 1`,
+            [userId]
+        );
+
+        let message = "";
+        if (selected.type === "coupon") {
+            await db.promise().query(
+                "INSERT INTO coupons (code, discount_percent, min_order_amount, is_active) VALUES (?, ?, 0, 1) ON DUPLICATE KEY UPDATE discount_percent = VALUES(discount_percent), is_active = 1",
+                [selected.value, parseInt(selected.value.replace("SPIN", "")) || 20]
+            );
+            message = `You won a ${selected.name} (${selected.value})! Check your coupons.`;
+        } else if (selected.type === "points") {
+            message = `You won ${selected.name}!`;
+        } else {
+            message = "Better luck next time!";
+        }
+        await createUserNotification(userId, `Spin & Win: ${message}`);
+        res.json({ success: true, prize: { type: selected.type, value: selected.value, name: selected.name }, message, remainingSpins: available - 1 });
+    } catch (error) {
+        console.error("Spin failed:", error.message);
+        res.status(503).json({ error: "Spin failed. Please try again." });
+    }
+});
+
+// Keep daily reward spin for backward compatibility (optional - can be removed)
+app.post("/api/daily-reward/spin", async (req, res) => {
+    const userId = Number(req.body?.userId);
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    try {
+        await dailyRewardsReady;
+        await spinPrizesReady;
+        await databaseReady;
+        const [[user]] = await db.promise().query("SELECT name, email FROM users WHERE id = ?", [userId]);
+        if (!user) return res.status(404).json({ error: "User not found" });
+        const today = new Date().toISOString().slice(0, 10);
+        const [[existing]] = await db.promise().query(
+            "SELECT reward_type, reward_value FROM daily_rewards WHERE user_id = ? AND spin_date = ?",
+            [userId, today]
+        );
+        if (existing) {
+            return res.status(400).json({ error: "You have already spun today. Come back tomorrow!" });
+        }
+        const [prizes] = await db.promise().query(
+            "SELECT id, name, type, value, probability FROM spin_prizes WHERE is_active = 1 AND probability > 0"
+        );
+        if (!prizes.length) return res.status(503).json({ error: "No prizes available" });
+        const totalWeight = prizes.reduce((sum, p) => sum + Number(p.probability), 0);
+        let random = Math.random() * totalWeight;
+        let selected = prizes[0];
+        for (const prize of prizes) {
+            random -= Number(prize.probability);
+            if (random <= 0) { selected = prize; break; }
+        }
+        await db.promise().query(
+            "INSERT INTO daily_rewards (user_id, reward_type, reward_value, spin_date) VALUES (?, ?, ?, ?)",
+            [userId, selected.type, selected.value, today]
+        );
+        let message = "";
+        if (selected.type === "coupon") {
+            await db.promise().query(
+                "INSERT INTO coupons (code, discount_percent, min_order_amount, is_active) VALUES (?, ?, 0, 1) ON DUPLICATE KEY UPDATE discount_percent = VALUES(discount_percent), is_active = 1",
+                [selected.value, parseInt(selected.value.replace("SPIN", "")) || 10]
+            );
+            message = `You won a ${selected.name} (${selected.value})! Check your coupons.`;
+        } else {
+            message = `You won ${selected.name}!`;
+        }
+        await createUserNotification(userId, `Spin & Win: ${message}`);
+        res.json({ success: true, prize: { type: selected.type, value: selected.value, name: selected.name }, message });
+    } catch (error) {
+        console.error("Spin failed:", error.message);
+        res.status(503).json({ error: "Spin failed. Please try again." });
     }
 });

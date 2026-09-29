@@ -119,12 +119,6 @@
 						<label>Password<input id="admin-password" type="password" value="admin123" required></label>
 						<button type="submit" class="primary-button">Sign in</button>
 					</form>
-					<div style="margin-top: 20px; padding: 16px; background: var(--adm-surface); border-radius: 8px; border: 1px solid var(--adm-line);">
-						<p style="margin: 0 0 12px; font-size: 12px; font-weight: 600; color: var(--adm-accent-dark);">Support Dashboard Login</p>
-						<p style="margin: 0 0 6px; font-size: 11px; color: var(--adm-muted);">Email: <code>support@sriramstore.local</code></p>
-						<p style="margin: 0; font-size: 11px; color: var(--adm-muted);">Password: <code>support123</code></p>
-						<p style="margin: 8px 0 0; font-size: 10px; color: var(--adm-muted);">Use these credentials to access the <a href="admin-support.html" style="color: var(--adm-accent);">Customer Support Dashboard</a></p>
-					</div>
 					<p class="admin-error" id="admin-error" role="alert"></p>
 				</section>
 				<section class="admin-panel" id="dashboard" hidden>
@@ -143,8 +137,12 @@
 					<table class="admin-table"><thead><tr><th>Image</th><th>Name</th><th>Price</th><th>Category</th><th>Stock</th><th>Discount</th><th></th></tr></thead><tbody id="product-list"></tbody></table>
 				</section>
 				<section class="admin-panel" id="support-panel" hidden>
-					<p class="eyebrow">Customer support</p>
-					<h2>Support tickets</h2>
+					<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+						<div>
+							<p class="eyebrow">Customer support</p>
+							<h2>Support tickets</h2>
+						</div>
+					</div>
 					<p style="margin:0 0 12px;color:var(--adm-muted);font-size:12px;">Read customer support tickets, reply directly, and update their status.</p>
 					<div class="admin-form" style="grid-template-columns: 1fr auto; max-width: 720px; margin-bottom: 20px;">
 						<div class="admin-field">
@@ -265,7 +263,11 @@
 			</div>
 		</main>
 		<script>
-			const API_BASE = "https://ecommerce-1-r5m4.onrender.com";
+const API_BASE =
+    (window.location.hostname === "localhost" ||
+     window.location.hostname === "127.0.0.1")
+        ? "http://localhost:3000"
+        : "https://ecommerce-1-r5m4.onrender.com";
 			const tokenKey = "sriram-admin-token";
 			const adminProfileKey = "sriram-admin-profile";
 			const loginPanel = document.querySelector("#login-panel");
@@ -453,6 +455,9 @@
 				const data = await response.json().catch(() => ({}));
 				if (response.status === 401 && url !== "/admin/login") {
 					localStorage.removeItem(tokenKey);
+					localStorage.removeItem("sriram-support-admin-token");
+					localStorage.removeItem(adminProfileKey);
+					localStorage.removeItem("sriram-support-admin-profile");
 					showPanel(loginPanel);
 					updateAdminHeader();
 					return;
@@ -595,25 +600,30 @@
 				try {
 					const data = await request("/admin/login", { method: "POST", body: JSON.stringify({ email, password }) });
 					if (data.token) {
-						// Check if it's a support admin token by trying to access support panel
-						// The token itself doesn't indicate type, so we check if it was support credentials
 						const isSupportCreds = email === "support@sriramstore.local" && password === "support123";
+						const isAdminCreds = email === "admin@sriramstore.local" && password === "admin123";
+						// Single token key for both admin and support access
 						localStorage.setItem(tokenKey, data.token);
+						localStorage.setItem(adminProfileKey, JSON.stringify({ 
+							name: isSupportCreds ? "Support Team" : "Administrator", 
+							email: email.trim().toLowerCase() 
+						}));
 						if (isSupportCreds) {
-							localStorage.setItem("sriram-support-admin-token", data.token);
-							localStorage.setItem("sriram-support-admin-profile", JSON.stringify({ name: "Support Team", email: "support@sriramstore.local" }));
 							window.location.href = "admin-support.html";
 							return;
 						}
-						localStorage.setItem(adminProfileKey, JSON.stringify({ name: "Administrator", email: email.trim().toLowerCase() }));
-						const redirect = new URLSearchParams(window.location.search).get("redirect");
-						if (redirect) {
-							window.location.href = redirect;
-						} else {
-							await showDashboard();
+						if (isAdminCreds) {
+							const redirect = new URLSearchParams(window.location.search).get("redirect");
+							if (redirect) {
+								window.location.href = redirect;
+							} else {
+								await showDashboard();
+							}
+							return;
 						}
 					} else if (data.user) {
 						localStorage.removeItem(tokenKey);
+						localStorage.removeItem(adminProfileKey);
 						localStorage.setItem("sriram-store-user", JSON.stringify(data.user));
 						showToast("Signed in as customer");
 						window.location.href = "index.html";

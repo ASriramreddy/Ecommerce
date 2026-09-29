@@ -2555,13 +2555,14 @@ async function checkDelivery(pincode, save) {
 }
 
 const SPIN_SEGMENTS = [
+  { name: "5 Points", type: "points", value: "5", color: "#8bc34a" },
   { name: "10 Points", type: "points", value: "10", color: "#2c5f2d" },
-  { name: "20 Points", type: "points", value: "20", color: "#3a7d44" },
-  { name: "5% Coupon", type: "coupon", value: "SPIN5", color: "#e78b71" },
-  { name: "10% Coupon", type: "coupon", value: "SPIN10", color: "#d4685a" },
-  { name: "50 Points", type: "points", value: "50", color: "#4a9e5c" },
-  { name: "25% Coupon", type: "coupon", value: "SPIN25", color: "#c45d4a" },
-  { name: "100 Points", type: "points", value: "100", color: "#1a5c2a" }
+  { name: "25 Points", type: "points", value: "25", color: "#4caf50" },
+  { name: "50 Points", type: "points", value: "50", color: "#3a7d44" },
+  { name: "₹20 Coupon", type: "coupon", value: "SPIN20", color: "#ff9800" },
+  { name: "₹50 Coupon", type: "coupon", value: "SPIN50", color: "#f57c00" },
+  { name: "₹100 Coupon", type: "coupon", value: "SPIN100", color: "#e65100" },
+  { name: "Better Luck Next Time", type: "none", value: "none", color: "#9e9e9e" }
 ];
 let wheelRotation = 0;
 let isSpinning = false;
@@ -2652,14 +2653,20 @@ async function checkSpinStatus() {
   const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
   const spinButton = document.querySelector("#spin-button");
   const statusEl = document.querySelector("#spin-status");
+  const spinsCountEl = document.querySelector("#spins-count");
   if (!user?.id || !spinButton) return;
   try {
-    const response = await fetch(`${API_URL}/api/daily-reward/status?userId=${user.id}`);
+    const response = await fetch(`${API_URL}/api/spin/attempts?userId=${user.id}`);
     const data = await response.json().catch(() => ({}));
-    if (response.ok && data.hasSpunToday) {
-      spinButton.disabled = true;
-      spinButton.innerHTML = "<span>⏰</span> Come Tomorrow";
-      if (statusEl) { statusEl.textContent = "You've already spun today. Come back tomorrow!"; statusEl.className = "spin-status"; }
+    if (response.ok) {
+      if (spinsCountEl) spinsCountEl.textContent = `Spins available: ${data.available}`;
+      if (data.available <= 0) {
+        spinButton.disabled = true;
+        spinButton.innerHTML = "<span>🔒</span> No Spins Available";
+        if (statusEl) { statusEl.textContent = "Make a purchase of ₹500+ to earn spins!"; statusEl.className = "spin-status"; }
+      } else {
+        resetSpinButton();
+      }
     } else {
       resetSpinButton();
     }
@@ -2677,25 +2684,27 @@ async function submitSpin() {
   }
   if (isSpinning) return;
   try {
-    const response = await fetch(`${API_URL}/api/daily-reward/spin`, {
+    const response = await fetch(`${API_URL}/api/spin/wheel`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: user.id })
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      if (data.error && data.error.includes("already spun")) {
-        showToast("You've already spun today. Come back tomorrow!", false);
-        const spinButton = document.querySelector("#spin-button");
-        const statusEl = document.querySelector("#spin-status");
-        if (spinButton) { spinButton.disabled = true; spinButton.innerHTML = "<span>⏰</span> Come Tomorrow"; }
-        if (statusEl) { statusEl.textContent = "Come back tomorrow for another spin"; statusEl.className = "spin-status"; }
+      if (data.error && data.error.includes("No spins available")) {
+        showToast("No spins available. Make a purchase of ₹500+ to earn spins!", false);
+        checkSpinStatus();
         return;
       }
       showToast(data.error || "Spin failed", false);
       return;
     }
     spinWheelToPrize(data.prize);
+    // Update spins count after successful spin
+    const spinsCountEl = document.querySelector("#spins-count");
+    if (spinsCountEl && data.remainingSpins !== undefined) {
+      spinsCountEl.textContent = `Spins available: ${data.remainingSpins}`;
+    }
   } catch (error) {
     showToast("Could not connect to server", false);
   }
@@ -2708,17 +2717,20 @@ function showSpinResult(prize) {
   const prizeEl = document.querySelector("#spin-result-prize");
   const messageEl = document.querySelector("#spin-result-message");
   const applyBtn = document.querySelector("#spin-apply-btn");
-  if (iconEl) iconEl.textContent = prize.type === "coupon" ? "🎫" : "⚡";
-  if (titleEl) titleEl.textContent = "You Won!";
+  if (iconEl) iconEl.textContent = prize.type === "coupon" ? "🎫" : (prize.type === "points" ? "⚡" : "🍀");
+  if (titleEl) titleEl.textContent = prize.type === "none" ? "Better Luck Next Time!" : "You Won!";
   if (prizeEl) prizeEl.textContent = prize.name || `${prize.value} ${prize.type}`;
   if (messageEl) {
     if (prize.type === "coupon") {
       messageEl.textContent = `Coupon code ${prize.value} has been added to your account. Apply it at checkout!`;
-    } else {
+    } else if (prize.type === "points") {
       messageEl.textContent = `${prize.value} points have been added to your account.`;
+    } else {
+      messageEl.textContent = "Don't worry, you can earn more spins with your next purchase!";
     }
   }
   if (applyBtn) {
+    applyBtn.style.display = prize.type === "coupon" ? "inline-flex" : "none";
     applyBtn.onclick = async () => {
       if (prize.type === "coupon") {
         try {
@@ -2754,7 +2766,7 @@ function closeSpinModal() {
 
 function openSpinWheelModal() {
   const modal = document.querySelector("#spin-wheel-modal");
-  if (modal) { modal.classList.add("open"); modal.setAttribute("aria-hidden", "false"); drawSpinWheel(); checkSpinStatus(); resetSpinButton(); }
+  if (modal) { modal.classList.add("open"); modal.setAttribute("aria-hidden", "false"); drawSpinWheel(); checkSpinStatus(); }
 }
 
 function resetSpinButton() {
@@ -2762,7 +2774,7 @@ function resetSpinButton() {
   const statusEl = document.querySelector("#spin-status");
   const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
   if (!user?.id || !spinButton) return;
-  if (statusEl) { statusEl.textContent = "One spin per day"; statusEl.className = "spin-status is-valid"; }
+  if (statusEl) { statusEl.textContent = "Spin to win rewards!"; statusEl.className = "spin-status is-valid"; }
   spinButton.disabled = false;
   spinButton.innerHTML = "<span>&#127922;</span> Spin the Wheel";
 }
