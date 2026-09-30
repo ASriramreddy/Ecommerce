@@ -979,7 +979,10 @@ function paintOrders(orders) {
     const isReturned = status === "returned";
     const isCancelled = status === "cancelled";
     const isDelivered = status === "delivered";
-    const editButton = !isFinal && order.userId && user?.id === order.userId ? `<button class="secondary-button" type="button" data-edit-order="${order.id}">Edit</button>` : "";
+    // Edit button hidden from the orders list. The edit modal, its form handler
+    // and the [data-edit-order] click handler below are intentionally left in
+    // place so the feature can be re-enabled without any other changes.
+    const editButton = "";
     const returnButton = isFinal ? "" : `<button class="return-order" type="button" data-return-order="${order.id}">Return</button>`;
     const cancelButton = isFinal ? "" : `<button class="cancel-order" type="button" data-cancel-order="${order.id}">Cancel order</button>`;
     const statusAction = isReturned
