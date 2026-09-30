@@ -1,6 +1,25 @@
-// The backend serves this frontend as static files, so the API is always same-origin.
-// Opening index.html directly from disk falls back to the local dev server.
-const API_URL = "https://ecommerce-1-r5m4.onrender.com";
+// The backend always runs on port 3000. The frontend may be served by the backend
+// itself (localhost:3000), by a Live Server on another port (e.g. 127.0.0.1:5501),
+// or from a separate host such as Vercel. In every case the API is the backend.
+const PRODUCTION_API_URL = "https://ecommerce-1-r5m4.onrender.com";
+const BACKEND_ORIGIN = "http://localhost:3000";
+
+function resolveApiUrl() {
+  const { protocol, hostname, port, origin } = window.location;
+  // Opened straight from disk.
+  if (protocol === "file:") return BACKEND_ORIGIN;
+  const isLocalHost = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(hostname);
+  // Served directly by the backend.
+  if (port === "3000") return origin || BACKEND_ORIGIN;
+  // Live Server / static server on a local port.
+  if (isLocalHost) return BACKEND_ORIGIN;
+  // Deployed on the same host as the API.
+  if (origin && origin !== "null" && origin === PRODUCTION_API_URL) return origin;
+  // Deployed on a different host (e.g. Vercel) - call the API host directly.
+  return PRODUCTION_API_URL;
+}
+
+const API_URL = resolveApiUrl();
 const API_BASE = API_URL;
 const ORDER_REQUEST_TIMEOUT_MS = 20000;
 
@@ -55,9 +74,9 @@ const wishlistStorageKey = "sriram-store-wishlist";
 const notificationsStorageKey = "sriram-store-notifications";
 const addressesStorageKey = "sriram-store-addresses";
 const formatPrice = (price) => `₹${Number(price).toLocaleString("en-IN")}`;
-const productById = (id) => products.find((product) => product.id === id);
-const discountFor = (product) => Math.min(100, Math.max(0, Number(product.discount) || 0));
-const finalPrice = (product) => Number(product.price) * (1 - discountFor(product) / 100);
+const productById = (id) => (Array.isArray(products) ? products.find((product) => product.id === id) : undefined);
+const discountFor = (product) => Math.min(100, Math.max(0, Number(product?.discount) || 0));
+const finalPrice = (product) => Number(product?.price || 0) * (1 - discountFor(product) / 100);
 const imageFor = (product) => {
   if (typeof product.image === "string" && /^https?:\/\//.test(product.image)) return product.image;
   if (typeof product.image === "string" && product.image.startsWith("/")) {
@@ -87,16 +106,27 @@ function getDeliveryDays(state) {
 }
 
 function showToast(message, success = true) {
-  const toast = document.querySelector("#toast");
-  document.querySelector("#toast-message").textContent = message;
-  document.querySelector(".toast-icon").textContent = success ? "✓" : "×";
-  toast.classList.add("show");
-  window.clearTimeout(showToast.timer);
-  showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 3000);
+  try {
+    const toast = document.querySelector("#toast");
+    const text = document.querySelector("#toast-message");
+    const icon = document.querySelector(".toast-icon");
+    if (text) text.textContent = message;
+    if (icon) icon.textContent = success ? "✓" : "×";
+    if (!toast) return;
+    toast.classList.add("show");
+    window.clearTimeout(showToast.timer);
+    showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 3000);
+  } catch (error) {
+    console.error("showToast failed:", error);
+  }
 }
 
 function getNotifications() {
   try { return JSON.parse(localStorage.getItem(notificationsStorageKey) || "[]"); } catch { return []; }
+}
+function notificationTime(notification) {
+  const parsed = new Date(notification?.time || 0).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 function addNotification(message) {
   const notifications = getNotifications();
@@ -126,7 +156,7 @@ function markAllNotificationsRead() {
   renderNotifications();
 }
 function renderNotifications() {
-  const notifications = getNotifications();
+  const notifications = getNotifications().sort((a, b) => notificationTime(b) - notificationTime(a));
   const unreadCount = notifications.filter((n) => !n.read).length;
   const countEl = document.querySelector("#notification-count");
   const button = document.querySelector("#notification-button");
@@ -143,7 +173,7 @@ function renderNotifications() {
     list.innerHTML = '<p class="notification-empty">No notifications yet</p>';
     return;
   }
-  list.innerHTML = notifications.map((n) => `<div class="notification-item ${n.read ? "is-read" : ""}" data-notification-id="${n.id}"><p>${escapeHtml(n.message)}</p><small>${new Date(n.time).toLocaleString()}</small></div>`).join("");
+  list.innerHTML = notifications.map((n) => `<div class="notification-item ${n.read ? "is-read" : "is-unread"}" data-notification-id="${n.id}"><p>${escapeHtml(n.message)}</p><small>${new Date(n.time).toLocaleString()}</small></div>`).join("");
   list.querySelectorAll("[data-notification-id]").forEach((item) => {
     item.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -275,7 +305,11 @@ async function loadServerNotifications() {
       };
     });
     
-    const merged = [...mergedServerNotifications, ...localNotifications].slice(0, 50);
+    // Newest first, so a freshly arrived notification always sits on top
+    // regardless of whether it came from the server or was added locally.
+    const merged = [...mergedServerNotifications, ...localNotifications]
+      .sort((a, b) => notificationTime(b) - notificationTime(a))
+      .slice(0, 50);
     localStorage.setItem(notificationsStorageKey, JSON.stringify(merged));
     renderNotifications();
   } catch (error) {
@@ -430,7 +464,7 @@ async function submitRatingFromOrderDetails(productId, rating, comment) {
   }
 }
 
-function showOrderSuccess({ orderId, items, subtotal, discount, total, delivery, couponCode, emailStatus, emailError, email, canPollEmail }) {
+function showOrderSuccess({ orderId, items, subtotal, discount, total, delivery, couponCode, emailStatus, emailError, email, canPollEmail, spinsAwarded }) {
   const modal = document.querySelector("#order-success-modal");
   if (!modal) {
     console.error("Order success modal not found in DOM");
@@ -458,6 +492,7 @@ function showOrderSuccess({ orderId, items, subtotal, discount, total, delivery,
     toggleRow("#order-success-coupon-row", !!couponCode);
     toggleRow("#order-success-discount-row", Number(discount) > 0);
     if (couponCode) setText("#order-success-coupon", couponCode);
+    updateOrderSuccessSpins(spinsAwarded);
     updateOrderSuccessEmail(emailStatus, email, emailError);
     modal.classList.add("open");
     modal.setAttribute("aria-hidden", "false");
@@ -522,6 +557,22 @@ function startOrderEmailStatusPolling(orderId, fallbackEmail) {
   };
   const timer = setTimeout(poll, ORDER_EMAIL_POLL_INTERVAL_MS);
   orderEmailPollTimers.set(String(orderId), timer);
+}
+
+function updateOrderSuccessSpins(spinsAwarded) {
+  const box = document.querySelector("#order-success-spin-box");
+  const text = document.querySelector("#order-success-spin-text");
+  const spins = Number(spinsAwarded) || 0;
+  if (!box || !text) return;
+  if (spins <= 0) {
+    box.hidden = true;
+    text.textContent = "";
+    return;
+  }
+  box.hidden = false;
+  text.textContent = spins === 1
+    ? "You earned 1 more spin! Open Spin & Win to try your luck."
+    : `You earned ${spins} more spins! Open Spin & Win to try your luck.`;
 }
 
 function updateOrderSuccessEmail(emailStatus, email, emailError) {
@@ -1425,7 +1476,14 @@ async function loadProducts() {
     const response = await fetch(`${API_URL}/products`);
     console.log("Response status:", response.status);
     if (!response.ok) throw new Error(`Products request failed: ${response.status}`);
-    products = await response.json();
+    const payload = await response.json();
+    // The API returns a bare array, but a proxy/wrapper may nest it. Always
+    // keep `products` an array or every products.find/map call throws.
+    products = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.products)
+        ? payload.products
+        : [];
     console.log("Loaded products:", products);
     console.log("Products count:", products.length);
     
@@ -1437,7 +1495,8 @@ async function loadProducts() {
     await loadOffers();
   } catch (error) {
     console.error("loadProducts error:", error);
-    productGrid.innerHTML = '<p class="no-results">Products are temporarily unavailable.</p>';
+    products = [];
+    if (productGrid) productGrid.innerHTML = '<p class="no-results">Products are temporarily unavailable.</p>';
     showToast("Could not connect to the ecommerce database", false);
   }
 }
@@ -2648,6 +2707,11 @@ function drawSpinWheel() {
   const centerY = canvas.height / 2;
   const radius = Math.min(centerX, centerY) - 8;
   const segmentAngle = (2 * Math.PI) / SPIN_SEGMENTS.length;
+  const hubRadius = 30;
+  // Labels run along the radius, so keep them inside the wheel and clear of the hub.
+  const innerEdge = hubRadius + 8;
+  const outerEdge = radius - 10;
+  const labelSpan = outerEdge - innerEdge;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   SPIN_SEGMENTS.forEach((segment, i) => {
     const startAngle = i * segmentAngle - Math.PI / 2 + wheelRotation;
@@ -2655,6 +2719,7 @@ function drawSpinWheel() {
     ctx.beginPath();
     ctx.moveTo(centerX, centerY);
     ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+    ctx.closePath();
     ctx.fillStyle = segment.color;
     ctx.fill();
     ctx.strokeStyle = "#fff";
@@ -2663,60 +2728,54 @@ function drawSpinWheel() {
     ctx.save();
     ctx.translate(centerX, centerY);
     ctx.rotate(startAngle + segmentAngle / 2);
-    ctx.textAlign = "center";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
     ctx.fillStyle = "#fff";
-    
-    // Calculate font size based on text length
-    const text = segment.name;
-    const maxWidth = radius * 0.8;
-    let fontSize = 11;
-    ctx.font = `bold ${fontSize}px 'DM Sans', sans-serif`;
-    let textWidth = ctx.measureText(text).width;
-    
-    // Reduce font size if text is too wide
-    while (textWidth > maxWidth && fontSize > 8) {
-      fontSize--;
-      ctx.font = `bold ${fontSize}px 'DM Sans', sans-serif`;
-      textWidth = ctx.measureText(text).width;
-    }
-    
-    // If still too wide, wrap text
-    if (textWidth > maxWidth) {
-      const words = text.split(' ');
+
+    // Shrink to fit the radial space available.
+    let fontSize = 12;
+    const words = String(segment.name).split(" ");
+    const wrapText = (size) => {
+      ctx.font = `bold ${size}px 'DM Sans', sans-serif`;
       const lines = [];
-      let currentLine = words[0];
-      
-      for (let j = 1; j < words.length; j++) {
-        const testLine = currentLine + ' ' + words[j];
-        const testWidth = ctx.measureText(testLine).width;
-        if (testWidth > maxWidth) {
+      let currentLine = "";
+      for (const word of words) {
+        const candidate = currentLine ? `${currentLine} ${word}` : word;
+        if (ctx.measureText(candidate).width > labelSpan && currentLine) {
           lines.push(currentLine);
-          currentLine = words[j];
+          currentLine = word;
         } else {
-          currentLine = testLine;
+          currentLine = candidate;
         }
       }
-      lines.push(currentLine);
-      
-      const lineHeight = fontSize * 1.2;
-      const startY = -((lines.length - 1) * lineHeight) / 2;
-      
-      lines.forEach((line, lineIndex) => {
-        ctx.fillText(line, radius * 0.65, startY + lineIndex * lineHeight + 4);
-      });
-    } else {
-      ctx.fillText(text, radius * 0.65, 4);
+      if (currentLine) lines.push(currentLine);
+      return lines;
+    };
+
+    let lines = wrapText(fontSize);
+    // Too many lines for the wedge: shrink until at most two fit.
+    while (lines.length > 2 && fontSize > 8) {
+      fontSize -= 1;
+      lines = wrapText(fontSize);
     }
+    // Still too wide: break long words by character.
+    if (lines.length > 2) lines = [lines[0], lines.slice(1).join(" ")];
+
+    const lineHeight = fontSize * 1.15;
+    const startY = -((lines.length - 1) * lineHeight) / 2;
+    lines.forEach((line, lineIndex) => {
+      ctx.fillText(line, outerEdge, startY + lineIndex * lineHeight);
+    });
     ctx.restore();
   });
   ctx.beginPath();
-  ctx.arc(centerX, centerY, 20, 0, 2 * Math.PI);
+  ctx.arc(centerX, centerY, hubRadius, 0, 2 * Math.PI);
   ctx.fillStyle = "#fff";
   ctx.fill();
   ctx.strokeStyle = "#2c5f2d";
   ctx.lineWidth = 3;
   ctx.stroke();
-  ctx.font = "16px serif";
+  ctx.font = "18px serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText("▶", centerX, centerY);
@@ -2979,6 +3038,7 @@ function initApp() {
       let emailStatus = "sending";
       let emailErrorMessage = null;
       let confirmationEmail = null;
+      let spinsAwarded = 0;
       let apiError = null;
       const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
       console.log("User:", user);
@@ -2986,6 +3046,14 @@ function initApp() {
       console.log("Items in cart:", items, cart);
       if (items === 0) {
         showToast("Cart is empty", false);
+        return;
+      }
+      // A cart item whose product no longer exists would price at 0 and place a
+      // bogus order, so bail out with a clear message instead.
+      const missingProducts = cart.filter((item) => !productById(item.id));
+      if (missingProducts.length) {
+        console.error("Cart contains unknown products:", missingProducts);
+        showToast("Some items in your bag are no longer available. Please review your bag.", false);
         return;
       }
       const address = `${document.querySelector("#customer-address").value}, ${document.querySelector("#customer-city").value}, ${document.querySelector("#customer-district").value}, ${document.querySelector("#customer-state").value}, ${document.querySelector("#customer-pin").value}, ${document.querySelector("#customer-country").value}`;
@@ -3004,6 +3072,12 @@ function initApp() {
 
       // Show loading state
       const submitBtn = form.querySelector('button[type="submit"]');
+      const resetSubmitButton = () => {
+        if (!submitBtn) return;
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = "Confirm and place order <span>&rarr;</span>";
+      };
+      try {
       submitBtn.disabled = true;
       submitBtn.innerHTML = "Placing order... <span>⏳</span>";
 
@@ -3027,6 +3101,7 @@ function initApp() {
             emailStatus = data.emailStatus || (data.emailSent ? "sent" : "sending");
             emailErrorMessage = data.emailError || null;
             confirmationEmail = data.email || (user && user.email) || null;
+            spinsAwarded = Number(data.spinsAwarded) || 0;
             // Update user profile (fire and forget - don't block order confirmation)
             fetch(`${API_URL}/auth/me`, {
               method: "PATCH",
@@ -3054,8 +3129,7 @@ function initApp() {
         }
       }
       if (apiError) {
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = "Confirm and place order <span>&rarr;</span>";
+        resetSubmitButton();
         showToast(apiError, false);
         return;
       }
@@ -3093,14 +3167,29 @@ function initApp() {
           emailStatus,
           emailError: emailErrorMessage,
           email: confirmationEmail,
-          canPollEmail: Boolean(user && user.id)
+          canPollEmail: Boolean(user && user.id),
+          spinsAwarded
         });
       } catch (e) {
         console.error("showOrderSuccess error:", e);
         showToast(`Order ${finalOrderId} placed successfully`, true);
       }
       addNotification(`Order ${finalOrderId} placed successfully · ${items} item${items === 1 ? "" : "s"} · ${formatPrice(orderGrandTotal)}`);
+      if (spinsAwarded > 0) {
+        addNotification(spinsAwarded === 1
+          ? "You earned 1 more spin! Open Spin & Win to try your luck."
+          : `You earned ${spinsAwarded} more spins! Open Spin & Win to try your luck.`);
+        showToast(spinsAwarded === 1 ? "You earned 1 more spin!" : `You earned ${spinsAwarded} more spins!`);
+        if (user?.id) checkSpinStatus();
+      }
       showToast("Your order has been placed");
+      } catch (unexpectedError) {
+        // Never leave the button stuck on "Placing order...".
+        console.error("Checkout failed unexpectedly:", unexpectedError);
+        showToast(`Could not complete the order: ${unexpectedError?.message || "unexpected error"}`, false);
+      } finally {
+        resetSubmitButton();
+      }
     });
   }
 

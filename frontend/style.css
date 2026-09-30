@@ -132,11 +132,17 @@ body { background: var(--paper); }
 .notification-clear { border: 0; background: transparent; color: var(--green); font-size: 11px; font-weight: 700; cursor: pointer; }
 .notification-clear:hover { color: var(--green-dark); }
 .notification-list { padding: 8px 0; }
-.notification-item { padding: 10px 14px; border-bottom: 1px solid #f1f1f1; cursor: pointer; transition: background .2s; }
+.notification-item { position: relative; padding: 10px 14px 10px 22px; border-bottom: 1px solid #f1f1f1; cursor: pointer; transition: background .2s; }
 .notification-item:hover { background: #f7f8f4; }
-.notification-item.is-read { opacity: .7; }
+/* Unread: bold text, tinted row and a dot marker on the left edge. */
+.notification-item.is-unread { background: #f2f8ee; }
+.notification-item.is-unread::before { content: ""; position: absolute; left: 8px; top: 50%; transform: translateY(-50%); width: 7px; height: 7px; border-radius: 50%; background: var(--coral); }
+/* Read: regular weight and dimmed. */
+.notification-item.is-read { opacity: .65; }
+.notification-item.is-read::before { display: none; }
 .notification-item.is-read p { font-weight: 400; }
 .notification-item p { margin: 0; color: var(--ink); font-size: 12px; font-weight: 700; }
+.notification-item.is-unread p { font-weight: 800; color: var(--green-dark); }
 .notification-item small { color: #999; font-size: 10px; }
 .notification-empty { padding: 18px 14px; color: #999; font-size: 12px; text-align: center; }
 .product-actions { display: flex; align-items: center; gap: 14px; }
@@ -361,6 +367,9 @@ body { background: var(--paper); }
 .success-row-total strong { color: #2c5f2d; font-size: 16px; }
 .success-email { display: flex; align-items: center; justify-content: center; gap: 8px; background: #eaf3e3; color: #2c5f2d; border-radius: 8px; padding: 10px 12px; font-size: 12px; margin-bottom: 16px; }
 .success-email-icon { font-size: 16px; }
+.success-spin { display: flex; align-items: center; gap: 10px; background: #fff4e0; color: #92400e; border: 1px solid #fcd9a0; border-radius: 8px; padding: 10px 12px; font-size: 12px; font-weight: 600; margin-bottom: 10px; }
+.success-spin-icon { font-size: 18px; line-height: 1; }
+.success-spin[hidden] { display: none; }
 .success-cta { width: 100%; padding: 12px 16px; border: 0; border-radius: 10px; background: #2c5f2d; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s ease; }
 .success-cta:hover { background: #244a25; }
 @keyframes successFadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -457,12 +466,11 @@ body.auth-locked .auth-card > .close-button { display: none; }
 .no-reviews { color: #919790; font-size: 12px; text-align: center; padding: 10px; }
 
 @media (max-width: 760px) {
-	.store-header { gap: 20px; height: 67px; padding: 0 20px; }
-	.store-header nav { gap: 15px; }
-	.nav-link.active::after { bottom: -25px; }
-	.header-actions { gap: 10px; }
-	.header-search { order: 4; position: absolute; top: 76px; left: 20px; width: calc(100% - 40px); margin: 0; }
-	.store-header { margin-bottom: 62px; }
+    .store-header { gap: 20px; height: 67px; padding: 0 20px; }
+    .store-header nav { gap: 15px; }
+    .nav-link.active::after { bottom: -25px; }
+    .header-actions { gap: 10px; }
+    .store-header { margin-bottom: 14px; }
 	.store-main { padding: 0 20px 55px; }
 	.offer-banner { padding: 14px 16px; }
 	.offer-banner-track { grid-template-columns: 1fr; gap: 12px; }
@@ -502,10 +510,12 @@ body.auth-locked .auth-card > .close-button { display: none; }
         max-width: 100%;
         box-sizing: border-box;
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        padding: 0 12px;
-        gap: 10px;
-        overflow: hidden;
+        height: auto;
+        padding: 8px 12px;
+        gap: 8px 10px;
+        overflow: visible;
     }
     .store-main {
         width: 100%;
@@ -514,34 +524,49 @@ body.auth-locked .auth-card > .close-button { display: none; }
         padding-left: 20px;
         padding-right: 20px;
     }
+    /* Nav wraps onto as many lines as needed, so every link stays visible
+       instead of scrolling off-screen. */
     .store-header nav {
         display: flex;
+        order: 1;
         flex: 1 1 auto;
         min-width: 0;
-        gap: 18px;
-        overflow-x: auto;
-        overflow-y: hidden;
-        white-space: nowrap;
-        scrollbar-width: none;
-        -ms-overflow-style: none;
-        -webkit-overflow-scrolling: touch;
+        flex-wrap: wrap;
+        height: auto;
+        gap: 4px 16px;
+        overflow: visible;
+        white-space: normal;
     }
-    .store-header nav::-webkit-scrollbar { display: none; }
     .store-header nav .nav-link {
         flex: 0 0 auto;
         white-space: nowrap;
-        font-size: 16px;
+        font-size: 14px;
         display: inline-flex;
         align-items: center;
         padding: 4px 0;
     }
+    .nav-link.active::after { bottom: 0; }
     .header-actions {
+        order: 2;
         flex: 0 0 auto;
         display: flex;
         align-items: center;
         gap: 6px;
         white-space: nowrap;
     }
+    /* Search sits on its own full-width row inside the header. It used to be
+       absolutely positioned below the header, where overflow:hidden clipped it. */
+    .header-search {
+        order: 3;
+        position: static;
+        flex: 1 1 100%;
+        width: 100%;
+        margin: 0;
+        box-sizing: border-box;
+    }
+    /* The mobile header is now two rows tall, so anchor targets from the nav
+       need extra offset or they land hidden behind the sticky header. */
+    #shop, #products, #orders, #wishlist, #referral-section { scroll-margin-top: 130px; }
     .product-grid {
         width: 100%;
         max-width: 100%;
@@ -826,14 +851,13 @@ body.auth-locked .auth-card > .close-button { display: none; }
     position: absolute;
     display: grid;
     place-items: center;
-    width: 48px;
-    height: 48px;
+    width: 30px;
+    height: 30px;
     background: #fff;
     border-radius: 50%;
-    font-size: 22px;
+    font-size: 14px;
     z-index: 1;
     pointer-events: none;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.25);
 }
 .spin-wheel-card .spin-button {
     width: 100%;
@@ -1011,7 +1035,9 @@ body.auth-locked .auth-card > .close-button { display: none; }
 }
 
 /* Referral Section */
-.referral-section { max-width: 600px; margin: 0 auto 16px; padding: 0 16px; }
+/* Left-aligned inside .store-main (which is already centered), so the card
+   lines up with the shop and orders sections instead of floating mid-page. */
+.referral-section { max-width: 600px; margin: 0 0 16px; padding: 0; }
 .referral-card {
     background: #fff;
     border: 1px solid var(--line);
