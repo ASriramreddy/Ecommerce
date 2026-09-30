@@ -1,8 +1,6 @@
 // The backend serves this frontend as static files, so the API is always same-origin.
 // Opening index.html directly from disk falls back to the local dev server.
-const API_URL = window.location.protocol === "file:"
-  ? "https://ecommerce-1-r5m4.onrender.com/products"
-  : window.location.origin;
+const API_URL = "https://ecommerce-1-r5m4.onrender.com";
 const API_BASE = API_URL;
 const ORDER_REQUEST_TIMEOUT_MS = 20000;
 
