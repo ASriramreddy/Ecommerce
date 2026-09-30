@@ -161,6 +161,46 @@ function calculateSpinsForAmount(amount) {
     return 0;
 }
 
+// Every extra full SPIN_STEP of order value earns one additional spin, awarded
+// when the order is placed. A 200 order earns 1 spin, 399 earns 1, 400 earns 2.
+const SPIN_STEP_AMOUNT = 200;
+
+function calculateBonusSpins(amount) {
+    const amt = Number(amount);
+    if (!Number.isFinite(amt) || amt < SPIN_STEP_AMOUNT) return 0;
+    return Math.floor(amt / SPIN_STEP_AMOUNT);
+}
+
+// Credits spins to a user exactly once per order.
+async function awardSpinsForOrder(orderId, userId, totalAmount) {
+    const spinsToAward = calculateBonusSpins(totalAmount);
+    if (spinsToAward <= 0) return 0;
+    try {
+        await userSpinAttemptsReady;
+        // last_calculated_order_id guards against crediting the same order twice.
+        const [[existing]] = await db.promise().query(
+            "SELECT last_calculated_order_id FROM user_spin_attempts WHERE user_id = ?",
+            [userId]
+        );
+        if (existing?.last_calculated_order_id === String(orderId)) {
+            console.log(`[SPINS] Order ${orderId} already credited, skipping`);
+            return 0;
+        }
+        await db.promise().query(
+            `INSERT INTO user_spin_attempts (user_id, earned_spins, last_calculated_order_id)
+             VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE earned_spins = earned_spins + VALUES(earned_spins), last_calculated_order_id = VALUES(last_calculated_order_id)`,
+            [userId, spinsToAward, String(orderId)]
+        );
+        console.log(`[SPINS] Awarded ${spinsToAward} spin(s) for order ${orderId} (user ${userId}, total ${totalAmount})`);
+        return spinsToAward;
+    } catch (error) {
+        // Never fail the order because the spin credit failed.
+        console.error(`[SPINS] Failed to award spins for order ${orderId}:`, error.message);
+        return 0;
+    }
+}
+
 const uploadDirectory = path.join(__dirname, "..", "public", "images", "uploads");
 
 fs.mkdirSync(uploadDirectory, { recursive: true });
@@ -1433,28 +1473,14 @@ app.patch("/admin/orders/:id/status", requireAdmin, async (req, res) => {
     if (!id || !allowed.includes(status)) return res.status(400).json({ error: "Valid order id and status are required" });
     try {
         await ordersReady;
-        await userSpinAttemptsReady;
         const [[order]] = await db.promise().query("SELECT user_id, Total_Amount FROM orders WHERE id = ?", [id]);
         if (!order) return res.status(404).json({ error: "Order not found" });
         const wasDelivered = order.status === "delivered";
         const [result] = await db.promise().query("UPDATE orders SET status = ? WHERE id = ?", [status, id]);
         if (!result.affectedRows) return res.status(404).json({ error: "Order not found" });
         await createUserNotification(order.user_id, `Order ${id} status updated to ${status}.`);
-
-        // Award spins when order is marked as delivered
-        if (!wasDelivered && status === "delivered") {
-            const spinsToAward = calculateSpinsForAmount(order.Total_Amount);
-            if (spinsToAward > 0) {
-                await db.promise().query(
-                    `INSERT INTO user_spin_attempts (user_id, earned_spins, last_calculated_order_id)
-                     VALUES (?, ?, ?)
-                     ON DUPLICATE KEY UPDATE earned_spins = earned_spins + VALUES(earned_spins), last_calculated_order_id = VALUES(last_calculated_order_id)`,
-                    [order.user_id, spinsToAward, id]
-                );
-                await createUserNotification(order.user_id, `You earned ${spinsToAward} spin${spinsToAward > 1 ? "s" : ""} from order ${id}!`);
-            }
-        }
-
+        // Bonus spins are credited when the order is placed, not on delivery,
+        // so no spin award happens here.
         res.json({ id, status });
     } catch (error) {
         console.error("Order status update failed:", error.message);
@@ -2912,7 +2938,22 @@ app.post("/orders", async (req, res) => {
             }).catch(err => console.error("[ORDERS] Admin notification failed:", err.message));
         }
 
-        // 4. RESPOND IMMEDIATELY. Email outcome is reported via /orders/:id/email-status.
+        // 4. Award bonus spins for this order (₹200 of order value = 1 extra spin).
+        const spinsAwarded = await awardSpinsForOrder(id, userId, totalAmount);
+        if (spinsAwarded > 0) {
+            try {
+                await createUserNotification(
+                    userId,
+                    spinsAwarded === 1
+                        ? "You earned 1 more spin! Open Spin & Win to try your luck."
+                        : `You earned ${spinsAwarded} more spins! Open Spin & Win to try your luck.`
+                );
+            } catch (notifyError) {
+                console.error("[SPINS] Bonus spin notification failed:", notifyError.message);
+            }
+        }
+
+        // 5. RESPOND IMMEDIATELY. Email outcome is reported via /orders/:id/email-status.
         res.status(201).json({
             id,
             user_id: userId,
@@ -2924,7 +2965,8 @@ app.post("/orders", async (req, res) => {
             emailSent: false,
             emailStatus,
             email: customerEmail,
-            emailError: emailError
+            emailError: emailError,
+            spinsAwarded
         });
 
     } catch (error) {
@@ -3068,27 +3110,19 @@ app.post("/api/spin/award", async (req, res) => {
         if (!order) return res.status(404).json({ error: "Order not found" });
         if (order.status !== "delivered") return res.status(400).json({ error: "Order not delivered yet" });
 
-        // Check if already calculated for this order
-        const [[existing]] = await db.promise().query(
-            "SELECT last_calculated_order_id FROM user_spin_attempts WHERE user_id = ?",
-            [userId]
-        );
-        if (existing && existing.last_calculated_order_id === orderId) {
-            return res.json({ success: true, message: "Spins already awarded for this order", spinsAwarded: 0 });
-        }
-
-        const spinsToAward = calculateSpinsForAmount(order.Total_Amount);
+        // Spins are normally credited at order placement. This endpoint is a
+        // manual backstop and reuses the same once-per-order guard.
+        const spinsToAward = await awardSpinsForOrder(orderId, userId, order.Total_Amount);
         if (spinsToAward === 0) {
-            return res.json({ success: true, message: "Order amount below ₹500, no spins awarded", spinsAwarded: 0 });
+            const [[existing]] = await db.promise().query(
+                "SELECT last_calculated_order_id FROM user_spin_attempts WHERE user_id = ?",
+                [userId]
+            );
+            if (existing?.last_calculated_order_id === orderId) {
+                return res.json({ success: true, message: "Spins already awarded for this order", spinsAwarded: 0 });
+            }
+            return res.json({ success: true, message: `Order amount below ₹${SPIN_STEP_AMOUNT}, no spins awarded`, spinsAwarded: 0 });
         }
-
-        // Update or insert user spin attempts
-        await db.promise().query(
-            `INSERT INTO user_spin_attempts (user_id, earned_spins, last_calculated_order_id)
-             VALUES (?, ?, ?)
-             ON DUPLICATE KEY UPDATE earned_spins = earned_spins + VALUES(earned_spins), last_calculated_order_id = VALUES(last_calculated_order_id)`,
-            [userId, spinsToAward, orderId]
-        );
 
         await createUserNotification(userId, `You earned ${spinsToAward} spin${spinsToAward > 1 ? "s" : ""} from order ${orderId}!`);
         res.json({ success: true, spinsAwarded: spinsToAward, message: `Earned ${spinsToAward} spin${spinsToAward > 1 ? "s" : ""}!` });
