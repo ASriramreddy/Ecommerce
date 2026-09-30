@@ -1,17 +1,28 @@
-const API_BASE = "http://localhost:3000";
+// The backend serves this frontend as static files, so the API is always same-origin.
+// Opening index.html directly from disk falls back to the local dev server.
+const API_URL = window.location.protocol === "file:"
+  ? "http://localhost:3000"
+  : window.location.origin;
+const API_BASE = API_URL;
+const ORDER_REQUEST_TIMEOUT_MS = 20000;
 
-const api = {
-    async get(path) {
-        const response = await fetch(API_URL + path);
-
-        if (!response.ok) {
-            throw new Error(`API error: ${response.status}`);
-        }
-
-        return response.json();
+async function fetchWithTimeout(url, options = {}, timeoutMs = 20000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error && error.name === "AbortError") {
+      const timeoutError = new Error(`Request timed out after ${timeoutMs}ms`);
+      timeoutError.name = "TimeoutError";
+      throw timeoutError;
     }
-};
-const API_URL = "https://ecommerce-1-r5m4.onrender.com";
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 let products = [];
 let cart = [];
 let couponApplied = false;
@@ -421,11 +432,11 @@ async function submitRatingFromOrderDetails(productId, rating, comment) {
   }
 }
 
-function showOrderSuccess({ orderId, items, subtotal, discount, total, delivery, couponCode, emailSent, email }) {
+function showOrderSuccess({ orderId, items, subtotal, discount, total, delivery, couponCode, emailStatus, emailError, email, canPollEmail }) {
   const modal = document.querySelector("#order-success-modal");
   if (!modal) {
     console.error("Order success modal not found in DOM");
-    showToast(emailSent ? `Order ${orderId} placed. Confirmation email sent.` : `Order ${orderId} placed.`);
+    showToast(`Order ${orderId} placed.`);
     return;
   }
   try {
@@ -449,29 +460,99 @@ function showOrderSuccess({ orderId, items, subtotal, discount, total, delivery,
     toggleRow("#order-success-coupon-row", !!couponCode);
     toggleRow("#order-success-discount-row", Number(discount) > 0);
     if (couponCode) setText("#order-success-coupon", couponCode);
-    updateOrderSuccessEmail(emailSent, email);
+    updateOrderSuccessEmail(emailStatus, email, emailError);
     modal.classList.add("open");
     modal.setAttribute("aria-hidden", "false");
     console.log("Order success modal opened");
+    if (canPollEmail && emailStatus === "sending" && orderId) {
+      startOrderEmailStatusPolling(orderId, email);
+    }
   } catch (e) {
     console.error("Error in showOrderSuccess:", e);
     showToast(`Order ${orderId} placed successfully`, true);
   }
 }
 
-function updateOrderSuccessEmail(emailSent, email) {
+const ORDER_EMAIL_POLL_INTERVAL_MS = 3000;
+// SMTP handshake plus send can legitimately take ~25s, so poll for ~45s.
+const ORDER_EMAIL_POLL_MAX_ATTEMPTS = 15;
+const orderEmailPollTimers = new Map();
+
+function clearOrderEmailStatusPolling(orderId) {
+  const timer = orderEmailPollTimers.get(String(orderId));
+  if (timer) {
+    clearTimeout(timer);
+    orderEmailPollTimers.delete(String(orderId));
+  }
+}
+
+function startOrderEmailStatusPolling(orderId, fallbackEmail) {
+  clearOrderEmailStatusPolling(orderId);
+  let attempts = 0;
+  const poll = async () => {
+    attempts += 1;
+    if (!document.querySelector("#order-success-modal")?.classList.contains("open")) {
+      clearOrderEmailStatusPolling(orderId);
+      return;
+    }
+    try {
+      const response = await fetchWithTimeout(
+        `${API_URL}/orders/${encodeURIComponent(orderId)}/email-status`,
+        {},
+        10000
+      );
+      if (!response.ok) throw new Error(`status ${response.status}`);
+      const data = await response.json().catch(() => ({}));
+      const status = data.emailStatus || "unknown";
+      updateOrderSuccessEmail(status, data.email || fallbackEmail, data.emailError);
+      if (status === "sent" || status === "failed" || status === "unavailable") {
+        clearOrderEmailStatusPolling(orderId);
+        if (status === "sent") {
+          showToast(`Confirmation email sent to ${data.email || fallbackEmail}`);
+        }
+        return;
+      }
+    } catch (error) {
+      console.warn("Order email status poll failed:", error.message);
+    }
+    if (attempts >= ORDER_EMAIL_POLL_MAX_ATTEMPTS) {
+      clearOrderEmailStatusPolling(orderId);
+      return;
+    }
+    const timer = setTimeout(poll, ORDER_EMAIL_POLL_INTERVAL_MS);
+    orderEmailPollTimers.set(String(orderId), timer);
+  };
+  const timer = setTimeout(poll, ORDER_EMAIL_POLL_INTERVAL_MS);
+  orderEmailPollTimers.set(String(orderId), timer);
+}
+
+function updateOrderSuccessEmail(emailStatus, email, emailError) {
   const emailText = document.querySelector("#order-success-email-text");
   if (!emailText) return;
-  if (emailSent) {
-    emailText.innerHTML = `A confirmation email has been sent to <strong>${email || "your address"}</strong>.`;
-  } else {
-    emailText.textContent = "Your order is confirmed. (Email notification is currently unavailable.)";
+  const target = escapeHtml(email || "your address");
+  if (emailStatus === "sent") {
+    emailText.innerHTML = `A confirmation email has been sent to <strong>${target}</strong>.`;
+    return;
   }
+  if (emailStatus === "sending") {
+    emailText.innerHTML = `Your order is confirmed. Sending the confirmation email to <strong>${target}</strong>&hellip;`;
+    return;
+  }
+  if (emailStatus === "failed") {
+    emailText.textContent = "Your order is confirmed, but the confirmation email could not be sent. Your order number is shown above; contact support if you need a copy.";
+    return;
+  }
+  if (emailStatus === "unavailable") {
+    emailText.textContent = `Your order is confirmed. Email confirmations are currently unavailable${emailError ? ` (${emailError})` : ""}. Your order number is shown above.`;
+    return;
+  }
+  emailText.textContent = "Your order is confirmed.";
 }
 
 function closeOrderSuccess() {
   const modal = document.querySelector("#order-success-modal");
   if (!modal) return;
+  for (const orderId of [...orderEmailPollTimers.keys()]) clearOrderEmailStatusPolling(orderId);
   modal.classList.remove("open");
   modal.setAttribute("aria-hidden", "true");
 }
@@ -973,26 +1054,27 @@ async function openCheckout() {
   // Render address selector
   renderAddressSelector();
   
-  // Load from saved delivery pincode first
+  // Load saved pincode and user profile IN PARALLEL (don't block modal open)
   const savedPincode = localStorage.getItem("sriram-store-delivery-pincode");
-  if (savedPincode) {
-    try {
-      const response = await fetch(`https://api.postalpincode.in/pincode/${savedPincode}`);
-      const data = await response.json().catch(() => ({}));
-      if (data && data[0] && data[0].Status === "Success" && data[0].PostOffice && data[0].PostOffice.length > 0) {
-        const office = data[0].PostOffice[0];
-        const city = office.District || "";
-        const district = office.District || "";
-        const state = office.State || "";
-        document.querySelector("#customer-city").value = city;
-        document.querySelector("#customer-district").value = district;
-        document.querySelector("#customer-state").value = state;
-        document.querySelector("#customer-pin").value = savedPincode;
-        document.querySelector("#customer-country").value = "India";
-      }
-    } catch (e) {
-      console.error("Failed to load saved pincode details:", e);
-    }
+  
+  // Fire both requests in parallel
+  const pincodePromise = savedPincode ? fetch(`https://api.postalpincode.in/pincode/${savedPincode}`).then(r => r.json().catch(() => ({}))).catch(() => ({})) : Promise.resolve({});
+  const profilePromise = user?.id ? fetch(`${API_URL}/auth/me?userId=${user.id}`).then(r => r.json().catch(() => ({}))).catch(() => ({})) : Promise.resolve({});
+  
+  // Show modal immediately, populate when data arrives
+  const [pincodeData, profileData] = await Promise.all([pincodePromise, profilePromise]);
+  
+  // Populate pincode data
+  if (pincodeData && pincodeData[0] && pincodeData[0].Status === "Success" && pincodeData[0].PostOffice && pincodeData[0].PostOffice.length > 0) {
+    const office = pincodeData[0].PostOffice[0];
+    const city = office.District || "";
+    const district = office.District || "";
+    const state = office.State || "";
+    document.querySelector("#customer-city").value = city;
+    document.querySelector("#customer-district").value = district;
+    document.querySelector("#customer-state").value = state;
+    document.querySelector("#customer-pin").value = savedPincode;
+    document.querySelector("#customer-country").value = "India";
   }
   
   // Load default address
@@ -1000,33 +1082,25 @@ async function openCheckout() {
   if (defaultAddress) {
     populateAddressForm(defaultAddress);
     document.querySelector("#address-selector").value = defaultAddress.id;
-  } else if (user?.id) {
+  } else if (profileData.profile) {
     // Try to load from user profile
-    try {
-      const response = await fetch(`${API_URL}/auth/me?userId=${user.id}`);
-      const result = await response.json().catch(() => ({}));
-      if (response.ok && result.profile) {
-        const address = String(result.profile.address || "").trim();
-        const city = String(result.profile.city || "").trim();
-        const district = String(result.profile.district || "").trim();
-        const state = String(result.profile.state || "").trim();
-        const country = String(result.profile.country || "").trim();
-        const pin = String(result.profile.pin || "").trim();
-        const phone = String(result.profile.phone || "").trim();
-        const nameInput = document.querySelector("#customer-name");
-        const phoneInput = document.querySelector("#customer-phone");
-        if (address) document.querySelector("#customer-address").value = address;
-        if (city && !document.querySelector("#customer-city").value) document.querySelector("#customer-city").value = city;
-        if (district && !document.querySelector("#customer-district").value) document.querySelector("#customer-district").value = district;
-        if (state && !document.querySelector("#customer-state").value) document.querySelector("#customer-state").value = state;
-        if (country && !document.querySelector("#customer-country").value) document.querySelector("#customer-country").value = country;
-        if (pin && !document.querySelector("#customer-pin").value) document.querySelector("#customer-pin").value = pin;
-        if (phone && !nameInput.value) nameInput.value = String(result.user?.name || "").trim();
-        if (phone) phoneInput.value = phone;
-      }
-    } catch (error) {
-      console.error("Profile prefetch failed:", error.message);
-    }
+    const address = String(profileData.profile.address || "").trim();
+    const city = String(profileData.profile.city || "").trim();
+    const district = String(profileData.profile.district || "").trim();
+    const state = String(profileData.profile.state || "").trim();
+    const country = String(profileData.profile.country || "").trim();
+    const pin = String(profileData.profile.pin || "").trim();
+    const phone = String(profileData.profile.phone || "").trim();
+    const nameInput = document.querySelector("#customer-name");
+    const phoneInput = document.querySelector("#customer-phone");
+    if (address) document.querySelector("#customer-address").value = address;
+    if (city && !document.querySelector("#customer-city").value) document.querySelector("#customer-city").value = city;
+    if (district && !document.querySelector("#customer-district").value) document.querySelector("#customer-district").value = district;
+    if (state && !document.querySelector("#customer-state").value) document.querySelector("#customer-state").value = state;
+    if (country && !document.querySelector("#customer-country").value) document.querySelector("#customer-country").value = country;
+    if (pin && !document.querySelector("#customer-pin").value) document.querySelector("#customer-pin").value = pin;
+    if (phone && !nameInput.value) nameInput.value = String(profileData.user?.name || "").trim();
+    if (phone) phoneInput.value = phone;
   }
   
   // Address selector change handler
@@ -2593,9 +2667,48 @@ function drawSpinWheel() {
     ctx.rotate(startAngle + segmentAngle / 2);
     ctx.textAlign = "center";
     ctx.fillStyle = "#fff";
-    ctx.font = "bold 11px 'DM Sans', sans-serif";
+    
+    // Calculate font size based on text length
     const text = segment.name;
-    ctx.fillText(text, radius * 0.65, 4);
+    const maxWidth = radius * 0.8;
+    let fontSize = 11;
+    ctx.font = `bold ${fontSize}px 'DM Sans', sans-serif`;
+    let textWidth = ctx.measureText(text).width;
+    
+    // Reduce font size if text is too wide
+    while (textWidth > maxWidth && fontSize > 8) {
+      fontSize--;
+      ctx.font = `bold ${fontSize}px 'DM Sans', sans-serif`;
+      textWidth = ctx.measureText(text).width;
+    }
+    
+    // If still too wide, wrap text
+    if (textWidth > maxWidth) {
+      const words = text.split(' ');
+      const lines = [];
+      let currentLine = words[0];
+      
+      for (let j = 1; j < words.length; j++) {
+        const testLine = currentLine + ' ' + words[j];
+        const testWidth = ctx.measureText(testLine).width;
+        if (testWidth > maxWidth) {
+          lines.push(currentLine);
+          currentLine = words[j];
+        } else {
+          currentLine = testLine;
+        }
+      }
+      lines.push(currentLine);
+      
+      const lineHeight = fontSize * 1.2;
+      const startY = -((lines.length - 1) * lineHeight) / 2;
+      
+      lines.forEach((line, lineIndex) => {
+        ctx.fillText(line, radius * 0.65, startY + lineIndex * lineHeight + 4);
+      });
+    } else {
+      ctx.fillText(text, radius * 0.65, 4);
+    }
     ctx.restore();
   });
   ctx.beginPath();
@@ -2659,11 +2772,12 @@ async function checkSpinStatus() {
     const response = await fetch(`${API_URL}/api/spin/attempts?userId=${user.id}`);
     const data = await response.json().catch(() => ({}));
     if (response.ok) {
-      if (spinsCountEl) spinsCountEl.textContent = `Spins available: ${data.available}`;
-      if (data.available <= 0) {
+      const total = data.total || 0;
+      if (spinsCountEl) spinsCountEl.textContent = `Spins: ${data.daily?.available || 0} daily + ${data.purchase?.available || 0} earned = ${total} total`;
+      if (total <= 0) {
         spinButton.disabled = true;
         spinButton.innerHTML = "<span>🔒</span> No Spins Available";
-        if (statusEl) { statusEl.textContent = "Make a purchase of ₹500+ to earn spins!"; statusEl.className = "spin-status"; }
+        if (statusEl) { statusEl.textContent = "Daily spin resets at midnight. Purchase ₹500+ for more spins!"; statusEl.className = "spin-status"; }
       } else {
         resetSpinButton();
       }
@@ -2692,7 +2806,7 @@ async function submitSpin() {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       if (data.error && data.error.includes("No spins available")) {
-        showToast("No spins available. Make a purchase of ₹500+ to earn spins!", false);
+        showToast("No spins available. Daily spin resets at midnight!", false);
         checkSpinStatus();
         return;
       }
@@ -2702,8 +2816,8 @@ async function submitSpin() {
     spinWheelToPrize(data.prize);
     // Update spins count after successful spin
     const spinsCountEl = document.querySelector("#spins-count");
-    if (spinsCountEl && data.remainingSpins !== undefined) {
-      spinsCountEl.textContent = `Spins available: ${data.remainingSpins}`;
+    if (spinsCountEl && data.remaining) {
+      spinsCountEl.textContent = `Spins: ${data.remaining.daily} daily + ${data.remaining.purchase} earned = ${data.remaining.total} total`;
     }
   } catch (error) {
     showToast("Could not connect to server", false);
@@ -2864,7 +2978,8 @@ function initApp() {
       console.log("Form valid, proceeding...");
       const activeCouponCode = activeOffer?.coupon_code || (couponApplied && appliedCoupon ? appliedCoupon.code : "");
       let serverOrderId = null;
-      let emailSent = false;
+      let emailStatus = "sending";
+      let emailErrorMessage = null;
       let confirmationEmail = null;
       let apiError = null;
       const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
@@ -2897,24 +3012,25 @@ function initApp() {
       // Capture cart items for API call
       const productIds = cart.map((item) => item.id);
 
-      // Call API first (waits for email to be sent)
+      // Call API with a hard timeout so the button can never hang indefinitely.
       if (user && user.id) {
         try {
           console.log("Sending order to API...");
-          const response = await fetch(`${API_URL}/orders`, {
+          const response = await fetchWithTimeout(`${API_URL}/orders`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ userId: Number(user.id), items, productIds, address, couponCode: activeCouponCode, deliveryCharge, subtotal: orderSubtotal, discount: orderDiscount, totalAmount: orderTotal }),
-          });
+          }, ORDER_REQUEST_TIMEOUT_MS);
           console.log("Response status:", response.status);
           const data = await response.json().catch(() => ({ error: "Invalid response" }));
           console.log("Response data:", data);
           if (response.ok) {
             serverOrderId = data.id;
-            emailSent = !!data.emailSent;
+            emailStatus = data.emailStatus || (data.emailSent ? "sent" : "sending");
+            emailErrorMessage = data.emailError || null;
             confirmationEmail = data.email || (user && user.email) || null;
-            // Update user profile
-            await fetch(`${API_URL}/auth/me`, {
+            // Update user profile (fire and forget - don't block order confirmation)
+            fetch(`${API_URL}/auth/me`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -2934,7 +3050,9 @@ function initApp() {
           }
         } catch (error) {
           console.error("Order error:", error);
-          apiError = "Could not connect to server";
+          apiError = error && error.name === "TimeoutError"
+            ? "The server took too long to respond. Your order was not placed. Please try again."
+            : "Could not connect to server";
         }
       }
       if (apiError) {
@@ -2974,19 +3092,17 @@ function initApp() {
           total: orderGrandTotal,
           delivery: orderGrandTotal - orderTotal,
           couponCode: activeCouponCode,
-          emailSent,
-          email: confirmationEmail
+          emailStatus,
+          emailError: emailErrorMessage,
+          email: confirmationEmail,
+          canPollEmail: Boolean(user && user.id)
         });
       } catch (e) {
         console.error("showOrderSuccess error:", e);
         showToast(`Order ${finalOrderId} placed successfully`, true);
       }
       addNotification(`Order ${finalOrderId} placed successfully · ${items} item${items === 1 ? "" : "s"} · ${formatPrice(orderGrandTotal)}`);
-      if (emailSent && confirmationEmail) {
-        showToast(`Confirmation email sent to ${confirmationEmail}`);
-      } else {
-        showToast("Your order has been placed");
-      }
+      showToast("Your order has been placed");
     });
   }
 

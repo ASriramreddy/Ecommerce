@@ -44,7 +44,14 @@ if (EMAIL_HOST && EMAIL_PORT && EMAIL_USER && EMAIL_PASS) {
         host: EMAIL_HOST,
         port: EMAIL_PORT,
         secure: Number(EMAIL_PORT) === 465,
-        auth: { user: EMAIL_USER, pass: EMAIL_PASS }
+        auth: { user: EMAIL_USER, pass: EMAIL_PASS },
+        // Hard caps so a stalled SMTP server can never hang a request.
+        connectionTimeout: Number(process.env.EMAIL_CONNECTION_TIMEOUT) || 10000,
+        greetingTimeout: Number(process.env.EMAIL_GREETING_TIMEOUT) || 10000,
+        socketTimeout: Number(process.env.EMAIL_SOCKET_TIMEOUT) || 15000,
+        pool: true,
+        maxConnections: 3,
+        maxMessages: 100
     });
     emailTransporter.verify().then(
         () => {
@@ -56,10 +63,35 @@ if (EMAIL_HOST && EMAIL_PORT && EMAIL_USER && EMAIL_PASS) {
     console.warn("Email not configured. Set EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env to enable order confirmation emails.");
 }
 
+// Tracks the real outcome of order confirmation emails so the client can report
+// an accurate status instead of assuming success or failure.
+const orderEmailStatus = new Map();
+const ORDER_EMAIL_STATUS_TTL_MS = 10 * 60 * 1000;
+const ORDER_EMAIL_STATUS_MAX = 500;
+
+function setOrderEmailStatus(orderId, status, extra = {}) {
+    if (!orderId) return;
+    orderEmailStatus.set(String(orderId), { status, updatedAt: Date.now(), ...extra });
+    if (orderEmailStatus.size > ORDER_EMAIL_STATUS_MAX) {
+        const oldest = [...orderEmailStatus.entries()].sort((a, b) => a[1].updatedAt - b[1].updatedAt);
+        for (let i = 0; i < oldest.length - ORDER_EMAIL_STATUS_MAX; i++) {
+            orderEmailStatus.delete(oldest[i][0]);
+        }
+    }
+}
+
+setInterval(() => {
+    const cutoff = Date.now() - ORDER_EMAIL_STATUS_TTL_MS;
+    for (const [key, value] of orderEmailStatus) {
+        if (value.updatedAt < cutoff) orderEmailStatus.delete(key);
+    }
+}, ORDER_EMAIL_STATUS_TTL_MS).unref();
+
 async function sendOrderEmail({ to, name, id, items, subtotal, discount, totalAmount, deliveryCharge, address, couponCode }) {
     if (!emailTransporter) {
         throw new Error("Email transporter not configured. Check EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env");
     }
+    if (!to) throw new Error("No recipient email address available");
     const fmt = (value) => `Rs.${Number(value || 0).toLocaleString("en-IN")}`;
     const subtotalText = fmt(subtotal);
     const discountText = fmt(discount);
@@ -68,17 +100,9 @@ async function sendOrderEmail({ to, name, id, items, subtotal, discount, totalAm
     const couponRow = couponCode ? `<tr><td style="padding:10px 14px;color:#666;">Coupon</td><td style="padding:10px 14px;text-align:right;"><strong>${couponCode}</strong></td></tr>` : "";
     const discountRow = Number(discount) > 0 ? `<tr><td style="padding:10px 14px;color:#666;">Discount</td><td style="padding:10px 14px;text-align:right;color:#2c5f2d;">-&#8377;${Number(discount).toLocaleString("en-IN")}</td></tr>` : "";
 
-    const customerEmail = String(to || "").trim();
-    const primaryRecipient = customerEmail || ORDER_NOTIFICATION_EMAIL;
-    const ccList = ORDER_NOTIFICATION_EMAIL && customerEmail && ORDER_NOTIFICATION_EMAIL.toLowerCase() !== customerEmail.toLowerCase()
-        ? [ORDER_NOTIFICATION_EMAIL]
-        : [];
-
     const mailOptions = {
         from: `Sriram Store <${EMAIL_USER}>`,
-        to: primaryRecipient,
-        cc: ccList,
-        replyTo: ORDER_NOTIFICATION_EMAIL || customerEmail || undefined,
+        to: to,
         subject: `Order Confirmed - ${id} | Sriram Store`,
         headers: {
             "X-Entity-Ref-ID": id,
@@ -111,13 +135,7 @@ async function sendOrderEmail({ to, name, id, items, subtotal, discount, totalAm
         `
     };
 
-    try {
-        return await emailTransporter.sendMail(mailOptions);
-    } catch (firstErr) {
-        console.warn(`[ORDERS] First email attempt failed: ${firstErr.message}. Retrying in 1s...`);
-        await new Promise((r) => setTimeout(r, 1000));
-        return await emailTransporter.sendMail(mailOptions);
-    }
+    return await emailTransporter.sendMail(mailOptions);
 }
 
 const app = express();
@@ -2514,7 +2532,7 @@ app.post("/test-email", async (req, res) => {
         res.json({ ok: true, messageId: info.messageId, to });
     } catch (err) {
         console.error("[TEST-EMAIL] Failed:", err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: err.message, code: err.code || null });
     }
 });
 
@@ -2830,60 +2848,71 @@ app.post("/orders", async (req, res) => {
 
         // 1. SAVE ORDER
         await db.promise().query(
-    "INSERT INTO orders (id, user_id, items, address, delivery_charge, Total_Amount, status, product_ids, coupon_code, coupon_discount, discount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [id, userId, items, address, deliveryCharge, totalAmount, "placed", JSON.stringify(productIds), couponCode || null, discount, discount]
-);
+            "INSERT INTO orders (id, user_id, items, address, delivery_charge, Total_Amount, status, product_ids, coupon_code, coupon_discount, discount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [id, userId, items, address, deliveryCharge, totalAmount, "placed", JSON.stringify(productIds), couponCode || null, discount, discount]
+        );
 
         // 2. GET USER EMAIL
         const [[user]] = await db.promise().query(
-    "SELECT name, email FROM users WHERE id = ?",
-    [userId]
-);
-console.log("USER FROM DATABASE:", user);
-console.log("USER EMAIL:", user?.email);
+            "SELECT name, email FROM users WHERE id = ?",
+            [userId]
+        );
 
-        console.log(`[ORDERS] User lookup result:`, user);
-
-        // 3. SEND ORDER CONFIRMATION EMAIL before responding so the result is accurate.
-        let emailSent = false;
+        // 3. QUEUE ORDER CONFIRMATION EMAIL. Never block the HTTP response on SMTP.
+        let emailStatus = "sending";
         let emailError = null;
-        const recipients = [];
-        if (user && user.email) {
-            recipients.push(user.email);
-        }
-        if (ORDER_NOTIFICATION_EMAIL && (!user || !user.email || ORDER_NOTIFICATION_EMAIL.toLowerCase() !== (user?.email || "").toLowerCase())) {
-            recipients.push(ORDER_NOTIFICATION_EMAIL);
-        }
-        if (emailTransporter && recipients.length > 0) {
-            try {
-                for (const recipient of recipients) {
-                    await sendOrderEmail({
-                        to: recipient,
-                        name: user?.name || "Customer",
-                        id,
-                        items,
-                        subtotal,
-                        discount,
-                        totalAmount,
-                        deliveryCharge,
-                        address,
-                        couponCode
-                    });
-                }
-                emailSent = true;
-                console.log(`[ORDERS] Confirmation email sent to: ${recipients.join(", ")}`);
-            } catch (err) {
-                emailError = `Order confirmation email failed: ${err.message}`;
-                console.error("[ORDERS]", emailError);
-            }
+        const customerEmail = user?.email || null;
+
+        if (emailTransporter && customerEmail) {
+            setOrderEmailStatus(id, "sending", { email: customerEmail });
+            sendOrderEmail({
+                to: customerEmail,
+                name: user.name || "Customer",
+                id,
+                items,
+                subtotal,
+                discount,
+                totalAmount,
+                deliveryCharge,
+                address,
+                couponCode
+            }).then(() => {
+                setOrderEmailStatus(id, "sent", { email: customerEmail });
+                console.log(`[ORDERS] Confirmation email sent to: ${customerEmail}`);
+            }).catch(err => {
+                const message = `Order confirmation email failed: ${err.message}`;
+                setOrderEmailStatus(id, "failed", { email: customerEmail, error: message });
+                console.error("[ORDERS]", message);
+            });
+        } else if (!emailTransporter) {
+            emailStatus = "unavailable";
+            emailError = "Email transporter not configured on server. Check EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env";
+            setOrderEmailStatus(id, "unavailable", { error: emailError });
+            console.warn("[ORDERS]", emailError);
         } else {
-            emailError = !emailTransporter
-                ? "Email transporter not configured on server. Check EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env"
-                : "No email recipients available";
+            emailStatus = "unavailable";
+            emailError = "No email address available for this account";
+            setOrderEmailStatus(id, "unavailable", { error: emailError });
             console.warn("[ORDERS]", emailError);
         }
 
-        // 4. RESPONSE
+        // Also notify the store address if different. Fire and forget.
+        if (emailTransporter && ORDER_NOTIFICATION_EMAIL && ORDER_NOTIFICATION_EMAIL.toLowerCase() !== (customerEmail || "").toLowerCase()) {
+            sendOrderEmail({
+                to: ORDER_NOTIFICATION_EMAIL,
+                name: user?.name || "Customer",
+                id,
+                items,
+                subtotal,
+                discount,
+                totalAmount,
+                deliveryCharge,
+                address,
+                couponCode
+            }).catch(err => console.error("[ORDERS] Admin notification failed:", err.message));
+        }
+
+        // 4. RESPOND IMMEDIATELY. Email outcome is reported via /orders/:id/email-status.
         res.status(201).json({
             id,
             user_id: userId,
@@ -2892,8 +2921,9 @@ console.log("USER EMAIL:", user?.email);
             delivery_charge: deliveryCharge,
             total_amount: totalAmount,
             status: "placed",
-            emailSent: emailSent,
-            email: user ? user.email : null,
+            emailSent: false,
+            emailStatus,
+            email: customerEmail,
             emailError: emailError
         });
 
@@ -2905,6 +2935,14 @@ console.log("USER EMAIL:", user?.email);
             detail: error.message
         });
     }
+});
+
+app.get("/orders/:id/email-status", (req, res) => {
+    const id = String(req.params.id || "").trim();
+    if (!id) return res.status(400).json({ error: "Order id is required" });
+    const record = orderEmailStatus.get(id);
+    if (!record) return res.json({ id, emailStatus: "unknown" });
+    res.json({ id, email: record.email || null, emailStatus: record.status, emailError: record.error || null });
 });
 
 app.get("/api/daily-reward/status", async (req, res) => {
@@ -2937,6 +2975,16 @@ app.get("/api/daily-reward/status", async (req, res) => {
     }
 });
 
+// Helper: get "spin day" (resets at 6 AM instead of midnight)
+function getSpinDay(date = new Date()) {
+    const d = new Date(date);
+    if (d.getHours() < 6) {
+        d.setDate(d.getDate() - 1);
+    }
+    return d.toISOString().slice(0, 10);
+}
+
+// Spin the wheel (daily reward - legacy endpoint kept for compatibility)
 app.post("/api/daily-reward/spin", async (req, res) => {
     const userId = Number(req.body?.userId);
     if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
@@ -2946,7 +2994,7 @@ app.post("/api/daily-reward/spin", async (req, res) => {
         await databaseReady;
         const [[user]] = await db.promise().query("SELECT name, email FROM users WHERE id = ?", [userId]);
         if (!user) return res.status(404).json({ error: "User not found" });
-        const today = new Date().toISOString().slice(0, 10);
+        const today = getSpinDay();
         const [[existing]] = await db.promise().query(
             "SELECT reward_type, reward_value FROM daily_rewards WHERE user_id = ? AND spin_date = ?",
             [userId, today]
@@ -3050,49 +3098,80 @@ app.post("/api/spin/award", async (req, res) => {
     }
 });
 
-// Get user's available spins
+// Get user's available spins (daily free + purchase earned)
 app.get("/api/spin/attempts", async (req, res) => {
     const userId = Number(req.query.userId);
     if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
     try {
         await userSpinAttemptsReady;
+        await dailyRewardsReady;
+        const today = getSpinDay();
+        
+        // Check if daily free spin already used today
+        const [[dailyUsed]] = await db.promise().query(
+            "SELECT id FROM daily_rewards WHERE user_id = ? AND spin_date = ?",
+            [userId, today]
+        );
+        const dailyUsedToday = !!dailyUsed;
+        const dailyAvailable = dailyUsedToday ? 0 : 1;
+        
+        // Get purchase-earned spins
         const [[attempts]] = await db.promise().query(
             "SELECT earned_spins, used_spins FROM user_spin_attempts WHERE user_id = ?",
             [userId]
         );
         const earned = attempts?.earned_spins || 0;
         const used = attempts?.used_spins || 0;
-        const available = Math.max(0, earned - used);
-        res.json({ earned, used, available });
+        const purchaseAvailable = Math.max(0, earned - used);
+        
+        const totalAvailable = dailyAvailable + purchaseAvailable;
+        
+        res.json({ 
+            daily: { available: dailyAvailable, used: dailyUsedToday ? 1 : 0 },
+            purchase: { earned, used, available: purchaseAvailable },
+            total: totalAvailable
+        });
     } catch (error) {
         console.error("Spin attempts fetch failed:", error.message);
         res.status(503).json({ error: "Could not load spin attempts" });
     }
 });
 
-// Spin the wheel (uses available spins)
+// Spin the wheel (uses daily free spin first, then purchase spins)
 app.post("/api/spin/wheel", async (req, res) => {
     const userId = Number(req.body?.userId);
     if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
     try {
         await userSpinAttemptsReady;
+        await dailyRewardsReady;
         await spinPrizesReady;
         await databaseReady;
         const [[user]] = await db.promise().query("SELECT name, email FROM users WHERE id = ?", [userId]);
         if (!user) return res.status(404).json({ error: "User not found" });
-
-        // Check available spins
+        
+        const today = getSpinDay();
+        
+        // Check daily free spin availability
+        const [[dailyUsed]] = await db.promise().query(
+            "SELECT id FROM daily_rewards WHERE user_id = ? AND spin_date = ?",
+            [userId, today]
+        );
+        const hasDailySpin = !dailyUsed;
+        
+        // Check purchase spins
         const [[attempts]] = await db.promise().query(
             "SELECT earned_spins, used_spins FROM user_spin_attempts WHERE user_id = ?",
             [userId]
         );
         const earned = attempts?.earned_spins || 0;
         const used = attempts?.used_spins || 0;
-        const available = Math.max(0, earned - used);
-        if (available <= 0) {
-            return res.status(400).json({ error: "No spins available. Make a purchase of ₹500+ to earn spins!" });
+        const purchaseAvailable = Math.max(0, earned - used);
+        
+        const totalAvailable = (hasDailySpin ? 1 : 0) + purchaseAvailable;
+        if (totalAvailable <= 0) {
+            return res.status(400).json({ error: "No spins available. Daily spin resets at midnight, or make a purchase of ₹500+ to earn more!" });
         }
-
+        
         const [prizes] = await db.promise().query(
             "SELECT id, name, type, value, probability FROM spin_prizes WHERE is_active = 1 AND probability > 0"
         );
@@ -3104,14 +3183,23 @@ app.post("/api/spin/wheel", async (req, res) => {
             random -= Number(prize.probability);
             if (random <= 0) { selected = prize; break; }
         }
-
-        // Increment used spins
-        await db.promise().query(
-            `INSERT INTO user_spin_attempts (user_id, used_spins) VALUES (?, 1)
-             ON DUPLICATE KEY UPDATE used_spins = used_spins + 1`,
-            [userId]
-        );
-
+        
+        // Use daily spin first, then purchase spins
+        let spinSource = "purchase";
+        if (hasDailySpin) {
+            await db.promise().query(
+                "INSERT INTO daily_rewards (user_id, reward_type, reward_value, spin_date) VALUES (?, ?, ?, ?)",
+                [userId, selected.type, selected.value, today]
+            );
+            spinSource = "daily";
+        } else {
+            await db.promise().query(
+                `INSERT INTO user_spin_attempts (user_id, used_spins) VALUES (?, 1)
+                 ON DUPLICATE KEY UPDATE used_spins = used_spins + 1`,
+                [userId]
+            );
+        }
+        
         let message = "";
         if (selected.type === "coupon") {
             await db.promise().query(
@@ -3124,8 +3212,20 @@ app.post("/api/spin/wheel", async (req, res) => {
         } else {
             message = "Better luck next time!";
         }
-        await createUserNotification(userId, `Spin & Win: ${message}`);
-        res.json({ success: true, prize: { type: selected.type, value: selected.value, name: selected.name }, message, remainingSpins: available - 1 });
+        await createUserNotification(userId, `Spin & Win (${spinSource}): ${message}`);
+        
+        // Calculate remaining spins
+        const newDailyAvailable = hasDailySpin ? 0 : 0;
+        const newPurchaseAvailable = hasDailySpin ? purchaseAvailable : Math.max(0, purchaseAvailable - 1);
+        const remainingTotal = newDailyAvailable + newPurchaseAvailable;
+        
+        res.json({ 
+            success: true, 
+            prize: { type: selected.type, value: selected.value, name: selected.name }, 
+            message, 
+            spinSource,
+            remaining: { daily: newDailyAvailable, purchase: newPurchaseAvailable, total: remainingTotal }
+        });
     } catch (error) {
         console.error("Spin failed:", error.message);
         res.status(503).json({ error: "Spin failed. Please try again." });
@@ -3142,7 +3242,7 @@ app.post("/api/daily-reward/spin", async (req, res) => {
         await databaseReady;
         const [[user]] = await db.promise().query("SELECT name, email FROM users WHERE id = ?", [userId]);
         if (!user) return res.status(404).json({ error: "User not found" });
-        const today = new Date().toISOString().slice(0, 10);
+        const today = getSpinDay();
         const [[existing]] = await db.promise().query(
             "SELECT reward_type, reward_value FROM daily_rewards WHERE user_id = ? AND spin_date = ?",
             [userId, today]
