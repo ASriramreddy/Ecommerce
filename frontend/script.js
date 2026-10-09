@@ -630,10 +630,10 @@ function setAuthenticated(user) {
   localStorage.removeItem(authStorageKey);
   document.body.classList.add("auth-locked");
   authModal.setAttribute("aria-hidden", "false");
+  closeProfile();
   document.querySelector("#account-button").textContent = "Account";
   document.querySelector("#logout-button").hidden = true;
   renderNotifications();
-  document.querySelector("#referral-section").hidden = true;
 }
 
 function showWelcomeSpinIfNew(user) {
@@ -663,6 +663,7 @@ function setAuthMode(mode) {
   const registerMode = mode === "register";
   loginForm.classList.toggle("is-visible", loginMode);
   registerForm.classList.toggle("is-visible", registerMode);
+  forgotEl("", "form")?.classList.remove("is-visible");
   document.querySelector("#login-tab").classList.toggle("is-active", loginMode);
   document.querySelector("#register-tab").classList.toggle("is-active", registerMode);
   document.querySelector("#login-tab").setAttribute("aria-selected", loginMode);
@@ -701,6 +702,7 @@ function setProfileAuthMode(mode) {
   const loginMode = mode === "login";
   profileLoginForm.classList.toggle("is-visible", loginMode);
   profileRegisterForm.classList.toggle("is-visible", !loginMode);
+  forgotEl("profile-", "form")?.classList.remove("is-visible");
   profileLoginTab.classList.toggle("is-active", loginMode);
   profileRegisterTab.classList.toggle("is-active", !loginMode);
   profileLoginTab.setAttribute("aria-selected", loginMode);
@@ -927,6 +929,30 @@ async function openDetails(id) {
   document.querySelector("#details-quantity").textContent = "1";
   const productId = Number(detailsModal.dataset.productId);
   await loadProductReviews(productId);
+  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+  if (user?.id) {
+    const userEmail = user.email || "";
+    try {
+      await fetch(`${API_URL}/products/${productId}/viewed`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user.id }) });
+    } catch {}
+    const stockAlertSection = document.querySelector("#stock-alert-section");
+    const stockAlertBtn = document.querySelector("#stock-alert-btn");
+    const stockAlertRemoveBtn = document.querySelector("#stock-alert-remove-btn");
+    if (stockAlertSection && Number(product.stock) === 0 && userEmail) {
+      stockAlertSection.style.display = "";
+      try {
+        const alerts = await fetch(`${API_URL}/stock-alerts?userId=${user.id}&productId=${productId}`).then(r => r.json().catch(() => []));
+        const hasAlert = Array.isArray(alerts) && alerts.some(a => a.is_active);
+        if (stockAlertBtn) stockAlertBtn.style.display = hasAlert ? "none" : "";
+        if (stockAlertRemoveBtn) stockAlertRemoveBtn.style.display = hasAlert ? "" : "none";
+      } catch {
+        if (stockAlertBtn) stockAlertBtn.style.display = "";
+        if (stockAlertRemoveBtn) stockAlertRemoveBtn.style.display = "none";
+      }
+    } else if (stockAlertSection) {
+      stockAlertSection.style.display = "none";
+    }
+  }
   detailsModal.classList.add("open");
   detailsModal.setAttribute("aria-hidden", "false");
 }
@@ -934,6 +960,42 @@ async function openDetails(id) {
 function closeModal(modal) {
   modal.classList.remove("open");
   modal.setAttribute("aria-hidden", "true");
+}
+
+async function toggleStockAlert(productId) {
+  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+  if (!user?.id) return showToast("Please sign in to subscribe", false);
+  const email = user.email || "";
+  if (!email) return showToast("Email is required for stock alerts", false);
+  const stockAlertBtn = document.querySelector("#stock-alert-btn");
+  const stockAlertRemoveBtn = document.querySelector("#stock-alert-remove-btn");
+  try {
+    const response = await fetch(`${API_URL}/stock-alerts`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user.id, productId, email }) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not subscribe");
+    showToast("You will be notified when this product is back in stock");
+    if (stockAlertBtn) stockAlertBtn.style.display = "none";
+    if (stockAlertRemoveBtn) stockAlertRemoveBtn.style.display = "";
+  } catch (error) {
+    showToast(error.message, false);
+  }
+}
+
+async function removeStockAlert(productId) {
+  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+  if (!user?.id) return;
+  const stockAlertBtn = document.querySelector("#stock-alert-btn");
+  const stockAlertRemoveBtn = document.querySelector("#stock-alert-remove-btn");
+  try {
+    const response = await fetch(`${API_URL}/stock-alerts/${productId}?userId=${user.id}`, { method: "DELETE" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok && response.status !== 404) throw new Error(data.error || "Could not remove alert");
+    showToast("Stock alert removed");
+    if (stockAlertBtn) stockAlertBtn.style.display = "";
+    if (stockAlertRemoveBtn) stockAlertRemoveBtn.style.display = "none";
+  } catch (error) {
+    showToast(error.message, false);
+  }
 }
 
 function statusLabel(status) {
@@ -1174,31 +1236,8 @@ async function openCheckout() {
   const addNewBtn = document.querySelector("#add-new-address-btn");
   if (addNewBtn) {
     addNewBtn.onclick = () => {
-      const name = prompt("Enter name for this address:");
-      if (!name) return;
-      const address = prompt("Enter full address (house, street, area):");
-      if (!address) return;
-      const city = document.querySelector("#customer-city").value || prompt("City:") || "";
-      const district = document.querySelector("#customer-district").value || prompt("District:") || "";
-      const state = document.querySelector("#customer-state").value || prompt("State:") || "";
-      const pin = document.querySelector("#customer-pin").value || prompt("PIN code:") || "";
-      const phone = document.querySelector("#customer-phone").value || prompt("Phone:") || "";
-      
-      const newAddr = addAddress({
-        name,
-        address,
-        city,
-        district,
-        state,
-        pin,
-        phone,
-        country: "India"
-      });
-      
-      renderAddressSelector();
-      document.querySelector("#address-selector").value = newAddr.id;
-      populateAddressForm(newAddr);
-      showToast("Address saved!");
+      clearAddressForm();
+      if (addressSelector) addressSelector.value = "";
     };
   }
   
@@ -1493,6 +1532,7 @@ async function loadProducts() {
     selectedCategory = "";
     renderCategoryFilter();
     renderProducts();
+    renderWishlist();
     updateExpiryTags();
     refreshAddButtons();
     await loadOffers();
@@ -2101,12 +2141,22 @@ document.querySelector("#submit-review")?.addEventListener("click", async () => 
   if (!productId) return;
   await submitReview(productId);
 });
+document.querySelector("#stock-alert-btn")?.addEventListener("click", async () => {
+  const productId = Number(detailsModal.dataset.productId);
+  if (!productId) return;
+  await toggleStockAlert(productId);
+});
+document.querySelector("#stock-alert-remove-btn")?.addEventListener("click", async () => {
+  const productId = Number(detailsModal.dataset.productId);
+  if (!productId) return;
+  await removeStockAlert(productId);
+});
 checkoutModal.querySelectorAll("[data-close-checkout]").forEach((element) => element.addEventListener("click", () => closeModal(checkoutModal)));
 orderEditModal.querySelectorAll("[data-close-order-edit]").forEach((element) => element.addEventListener("click", () => closeModal(orderEditModal)));
 profileModal.querySelectorAll("[data-close-profile]").forEach((element) => element.addEventListener("click", () => closeProfile()));
 profileLoginTab.addEventListener("click", () => setProfileAuthMode("login"));
 profileRegisterTab.addEventListener("click", () => setProfileAuthMode("register"));
-profileLoginForm.addEventListener("submit", (event) => {
+  profileLoginForm.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!profileLoginForm.checkValidity()) return profileLoginForm.reportValidity();
   submitProfileAuth(profileLoginForm, "/auth/login", {
@@ -2125,7 +2175,7 @@ profileRegisterForm.addEventListener("submit", (event) => {
 });
 document.querySelector("#details-decrease").addEventListener("click", () => {
   const quantity = Number(document.querySelector("#details-quantity").textContent);
-  document.querySelector("#details-quantity").textContent = Math.max(1, quantity - 1);
+  document.querySelector("#details-quantity").textContent = Math.max(0, quantity - 1);
 });
 document.querySelector("#details-increase").addEventListener("click", () => {
   const quantity = Number(document.querySelector("#details-quantity").textContent);
@@ -2334,68 +2384,156 @@ loginForm.addEventListener("submit", (event) => {
     password: document.querySelector("#login-password").value,
   });
 });
-function showForgotPasswordFlow() {
-  const email = prompt("Enter your email to reset your password:");
-  if (!email || !email.includes("@")) {
-    if (email) alert("Please enter a valid email address");
-    return;
-  }
-  fetch(`${API_URL}/auth/forgot-password`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email }),
-  })
-    .then((r) => r.json().catch(() => ({})))
-    .then((data) => {
-      if (data.error) {
-        alert(data.error);
-        return;
-      }
-      alert(data.message || "OTP sent to your email");
-      const otp = prompt("Enter the 6-digit OTP sent to your email:");
-      if (!otp || otp.length !== 6) {
-        if (otp) alert("Please enter a valid 6-digit OTP");
-        return;
-      }
-      fetch(`${API_URL}/auth/verify-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, otp }),
-      })
-        .then((r) => r.json().catch(() => ({})))
-        .then((data) => {
-          if (data.error) {
-            alert(data.error);
-            return;
-          }
-          alert(data.message || "OTP verified successfully");
-          const newPassword = prompt("Enter your new password (min 6 characters):");
-          if (!newPassword || newPassword.length < 6) {
-            if (newPassword) alert("Password must be at least 6 characters");
-            return;
-          }
-fetch(`${API_URL}/auth/reset-password`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, otp, password: newPassword }),
-          })
-            .then((r) => r.json().catch(() => ({})))
-            .then((data) => {
-              if (data.error) {
-                alert(data.error);
-} else {
-                alert(data.message || "Password reset successfully");
-              }
-            })
-            .catch(() => alert("Could not connect. Please try again."));
-        })
-        .catch(() => alert("Could not connect. Please try again."));
-    })
-    .catch(() => alert("Could not connect. Please try again."));
+
+// ===============================
+// FORGOT PASSWORD (3-step inline form)
+// ===============================
+const forgotFlowState = {
+  "": { step: "email", email: "", otp: "" },
+  "profile-": { step: "email", email: "", otp: "" },
+};
+
+function forgotEl(prefix, suffix) {
+  return document.querySelector(`#${prefix}forgot-${suffix}`);
 }
 
-document.querySelector("#forgot-password-link")?.addEventListener("click", showForgotPasswordFlow);
-document.querySelector("#profile-forgot-password-link")?.addEventListener("click", showForgotPasswordFlow);
+function setForgotStep(prefix, step) {
+  const state = forgotFlowState[prefix];
+  state.step = step;
+
+  const showOtp = step !== "email";
+  const showPassword = step === "password";
+
+  [["otp-label", showOtp], ["otp-wrap", showOtp], ["password-label", showPassword], ["password-wrap", showPassword]]
+    .forEach(([suffix, visible]) => {
+      const el = forgotEl(prefix, suffix);
+      if (el) el.hidden = !visible;
+    });
+
+  // Email is locked in once the OTP has been sent. The label is a sibling of
+  // the input, so look it up via its `for` attribute rather than closest().
+  const showEmail = !showOtp;
+  const emailLabel = document.querySelector(`label[for="${prefix}forgot-email"]`);
+  const emailWrap = forgotEl(prefix, "email")?.closest(".input-wrap");
+  if (emailLabel) emailLabel.hidden = !showEmail;
+  if (emailWrap) emailWrap.hidden = !showEmail;
+
+  const note = forgotEl(prefix, "step-note");
+  if (note) {
+    note.textContent = step === "email"
+      ? "Enter your email and we will send you a 6-digit OTP."
+      : step === "otp"
+        ? `Enter the 6-digit OTP sent to ${state.email}.`
+        : "Choose a new password for your account.";
+  }
+
+  const submit = forgotEl(prefix, "submit");
+  if (submit) {
+    submit.innerHTML = step === "email"
+      ? "Send OTP <span>&rarr;</span>"
+      : step === "otp"
+        ? "Verify OTP <span>&rarr;</span>"
+        : "Reset password <span>&rarr;</span>";
+  }
+}
+
+function showForgotPasswordFlow(prefix = "") {
+  const form = forgotEl(prefix, "form");
+  if (!form) return;
+  forgotFlowState[prefix] = { step: "email", email: "", otp: "" };
+
+  // Swap to the sign-in tab that owns this flow, then show the reset form.
+  const loginForm = prefix ? document.querySelector("#profile-login-form") : document.querySelector("#login-form");
+  const registerFormEl = prefix ? document.querySelector("#profile-register-form") : document.querySelector("#register-form");
+  if (loginForm) loginForm.classList.remove("is-visible");
+  if (registerFormEl) registerFormEl.classList.remove("is-visible");
+  form.classList.add("is-visible");
+
+  const tabs = document.querySelectorAll(prefix ? ".auth-tabs .tab" : "#auth-modal .auth-tabs .tab");
+  tabs.forEach((tab) => {
+    const isRegister = tab.id.includes("register");
+    tab.classList.toggle("is-active", !isRegister);
+    tab.setAttribute("aria-selected", String(!isRegister));
+  });
+
+  setForgotStep(prefix, "email");
+  const errorEl = document.querySelector(prefix ? "#profile-error" : "#auth-error");
+  if (errorEl) errorEl.textContent = "";
+  forgotEl(prefix, "email")?.focus();
+}
+
+function hideForgotPasswordFlow(prefix = "") {
+  const form = forgotEl(prefix, "form");
+  if (form) form.classList.remove("is-visible");
+  const loginForm = prefix ? document.querySelector("#profile-login-form") : document.querySelector("#login-form");
+  const registerFormEl = prefix ? document.querySelector("#profile-register-form") : document.querySelector("#register-form");
+  loginForm?.classList.add("is-visible");
+  if (registerFormEl) registerFormEl.classList.remove("is-visible");
+}
+
+function forgotRequest(prefix, endpoint, body) {
+  return fetch(`${API_URL}${endpoint}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+    .then((r) => r.json().catch(() => ({})));
+}
+
+function handleForgotSubmit(event, prefix) {
+  event.preventDefault();
+  const state = forgotFlowState[prefix];
+  const errorEl = document.querySelector(prefix ? "#profile-error" : "#auth-error");
+  const setError = (message) => { if (errorEl) errorEl.textContent = message; };
+  setError("");
+
+  if (state.step === "email") {
+    const email = forgotEl(prefix, "email")?.value.trim() || "";
+    if (!email || !email.includes("@")) return setError("Please enter a valid email address");
+    forgotRequest(prefix, "/auth/forgot-password", { email }).then((data) => {
+      if (data.error) return setError(data.error);
+      state.email = email;
+      setForgotStep(prefix, "otp");
+      forgotEl(prefix, "otp")?.focus();
+      showToast(data.message || "OTP sent to your email");
+    }).catch(() => setError("Could not connect. Please try again."));
+    return;
+  }
+
+  if (state.step === "otp") {
+    const otp = (forgotEl(prefix, "otp")?.value || "").trim();
+    if (!/^[0-9]{6}$/.test(otp)) return setError("Please enter the 6-digit OTP");
+    forgotRequest(prefix, "/auth/verify-otp", { email: state.email, otp }).then((data) => {
+      if (data.error) return setError(data.error);
+      state.otp = otp;
+      setForgotStep(prefix, "password");
+      // Clear any autofilled/stale value so the user types a genuinely new password.
+      const newPasswordInput = forgotEl(prefix, "new-password");
+      if (newPasswordInput) newPasswordInput.value = "";
+      newPasswordInput?.focus();
+      showToast(data.message || "OTP verified successfully");
+    }).catch(() => setError("Could not connect. Please try again."));
+    return;
+  }
+
+  const newPassword = forgotEl(prefix, "new-password")?.value || "";
+  if (!newPassword || newPassword.length < 6) return setError("Password must be at least 6 characters");
+  forgotRequest(prefix, "/auth/reset-password", { email: state.email, otp: state.otp, password: newPassword })
+    .then((data) => {
+      if (data.error) return setError(data.error);
+      showToast(data.message || "Password reset successfully");
+      forgotEl(prefix, "form")?.reset();
+      hideForgotPasswordFlow(prefix);
+    })
+    .catch(() => setError("Could not connect. Please try again."));
+}
+
+document.querySelector("#forgot-form")?.addEventListener("submit", (event) => handleForgotSubmit(event, ""));
+document.querySelector("#profile-forgot-form")?.addEventListener("submit", (event) => handleForgotSubmit(event, "profile-"));
+document.querySelector("#forgot-back-link")?.addEventListener("click", () => hideForgotPasswordFlow(""));
+document.querySelector("#profile-forgot-back-link")?.addEventListener("click", () => hideForgotPasswordFlow("profile-"));
+document.querySelector("#forgot-password-link")?.addEventListener("click", () => showForgotPasswordFlow(""));
+document.querySelector("#profile-forgot-password-link")?.addEventListener("click", () => showForgotPasswordFlow("profile-"));
 registerForm.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!registerForm.checkValidity()) return registerForm.reportValidity();
@@ -3060,6 +3198,24 @@ function initApp() {
         return;
       }
       const address = `${document.querySelector("#customer-address").value}, ${document.querySelector("#customer-city").value}, ${document.querySelector("#customer-district").value}, ${document.querySelector("#customer-state").value}, ${document.querySelector("#customer-pin").value}, ${document.querySelector("#customer-country").value}`;
+      
+      if (user && user.id) {
+        const addressData = {
+          name: document.querySelector("#customer-name").value.trim(),
+          phone: document.querySelector("#customer-phone").value.trim(),
+          address: document.querySelector("#customer-address").value.trim(),
+          city: document.querySelector("#customer-city").value.trim(),
+          district: document.querySelector("#customer-district").value.trim(),
+          state: document.querySelector("#customer-state").value.trim(),
+          pin: document.querySelector("#customer-pin").value.trim(),
+          country: document.querySelector("#customer-country").value.trim()
+        };
+        const existing = getAddresses();
+        const duplicate = existing.find(a => a.address === addressData.address && a.city === addressData.city && a.pin === addressData.pin);
+        if (!duplicate) {
+          addAddress(addressData);
+        }
+      }
       const orderSubtotal = cart.reduce((sum, item) => sum + finalPrice(productById(item.id)) * item.quantity, 0);
       const offerDiscount = activeOffer
         ? cart.reduce((sum, item) => {

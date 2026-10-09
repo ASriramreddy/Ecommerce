@@ -22,7 +22,7 @@
   
   <body>
     <header class="store-header">
-<nav aria-label="Store navigation">
+      <nav aria-label="Store navigation">
         <a class="nav-link active" href="#shop">Home</a
         ><a class="nav-link" href="#products">Categories</a
         ><a class="nav-link" href="#orders">My orders</a
@@ -340,6 +340,10 @@
             <button class="primary-button" id="submit-review" type="button">Submit Review</button>
           </div>
         </div>
+        <div class="stock-alert-section" id="stock-alert-section" style="display:none; margin-top: 14px;">
+          <button class="secondary-button" id="stock-alert-btn" type="button">🔔 Notify me when available</button>
+          <button class="secondary-button" id="stock-alert-remove-btn" type="button" style="display:none; border-color: #c15e52; color: #c15e52;">Remove stock alert</button>
+        </div>
       </article>
     </div>
     <div class="checkout-modal" id="checkout-modal" aria-hidden="true">
@@ -605,33 +609,33 @@
             Create account
           </button>
         </div>
-        <form class="auth-form is-visible" id="login-form" novalidate>
-          <label for="login-email">Email address</label>
-          <div class="input-wrap">
-            <span class="input-icon">&#9993;</span
-            ><input
-              id="login-email"
-              type="email"
-              placeholder="you@example.com"
-              required
-            />
-          </div>
-          <label for="login-password">Password</label>
-          <div class="input-wrap">
-            <span class="input-icon">&#128274;</span
-            ><input
-              id="login-password"
-              type="password"
-              placeholder="Enter your password"
-              minlength="6"
-              required
-            /><button class="password-toggle" type="button">Show</button>
-          </div>
-          <button class="primary-button" type="submit">
-            Sign in to Sriram Store <span>&rarr;</span>
-          </button>
-          <button type="button" class="forgot-link" id="forgot-password-link" style="display:block;margin:10px auto 0;background:none;border:0;color:#2563eb;font-size:12px;font-weight:600;cursor:pointer;text-decoration:underline;">Forgot password?</button>
-        </form>
+         <form class="auth-form is-visible" id="login-form" novalidate>
+           <label for="login-email">Email address</label>
+           <div class="input-wrap">
+             <span class="input-icon">&#9993;</span
+             ><input
+               id="login-email"
+               type="email"
+               placeholder="you@example.com"
+               required
+             />
+           </div>
+           <label for="login-password" id="login-password-label">Password</label>
+           <div class="input-wrap" id="login-password-wrap">
+             <span class="input-icon">&#128274;</span
+             ><input
+               id="login-password"
+               type="password"
+               placeholder="Enter your password"
+               minlength="6"
+               required
+             /><button class="password-toggle" type="button">Show</button>
+            </div>
+            <button class="primary-button" type="submit" id="login-submit-btn">
+              Sign in to Sriram Store <span>&rarr;</span>
+            </button>
+            <button type="button" class="forgot-link" id="forgot-password-link" style="display:block;margin:10px auto 0;background:none;border:0;color:#2563eb;font-size:12px;font-weight:600;cursor:pointer;text-decoration:underline;">Forgot password?</button>
+          </form>
         <form class="auth-form" id="register-form" novalidate>
           <label for="register-name">Full name</label>
           <div class="input-wrap">
@@ -669,6 +673,53 @@
             >I agree to the terms</label
           ><button class="primary-button" type="submit">
             Create my account <span>&rarr;</span>
+          </button>
+        </form>
+        <form class="auth-form" id="forgot-form" novalidate>
+          <p class="form-note" id="forgot-step-note">Enter your email and we will send you a 6-digit OTP.</p>
+          <label for="forgot-email">Email address</label>
+          <div class="input-wrap">
+            <span class="input-icon">&#9993;</span
+            ><input
+              id="forgot-email"
+              type="email"
+              placeholder="you@example.com"
+              required
+            />
+          </div>
+          <label for="forgot-otp" id="forgot-otp-label" hidden>6-digit OTP</label>
+          <div class="input-wrap" id="forgot-otp-wrap" hidden>
+            <span class="input-icon">&#128273;</span
+            ><input
+              id="forgot-otp"
+              type="text"
+              inputmode="numeric"
+              maxlength="6"
+              pattern="[0-9]{6}"
+              placeholder="123456"
+            />
+          </div>
+          <label for="forgot-new-password" id="forgot-password-label" hidden>New password</label>
+          <div class="input-wrap" id="forgot-password-wrap" hidden>
+            <span class="input-icon">&#128274;</span
+            ><input
+              id="forgot-new-password"
+              type="password"
+              placeholder="At least 6 characters"
+              autocomplete="new-password"
+              minlength="6"
+            /><button class="password-toggle" type="button">Show</button>
+          </div>
+          <button class="primary-button" type="submit" id="forgot-submit">
+            Send OTP <span>&rarr;</span>
+          </button>
+          <button
+            type="button"
+            class="forgot-link"
+            id="forgot-back-link"
+            style="display:block;margin:10px auto 0;background:none;border:0;color:#2563eb;font-size:12px;font-weight:600;cursor:pointer;text-decoration:underline;"
+          >
+            Back to sign in
           </button>
         </form>
         <p class="auth-error" id="auth-error" role="alert" aria-live="polite"></p>
@@ -710,31 +761,79 @@
             Create account
           </button>
         </div>
-        <form class="auth-form is-visible" id="profile-login-form" novalidate>
-          <label for="profile-login-email">Email address</label>
+         <form class="auth-form is-visible" id="profile-login-form" novalidate>
+           <label for="profile-login-email">Email address</label>
+           <div class="input-wrap">
+             <span class="input-icon">&#9993;</span
+             ><input
+               id="profile-login-email"
+               type="email"
+               placeholder="you@example.com"
+               required
+             />
+           </div>
+           <label for="profile-login-password" id="profile-login-password-label">Password</label>
+           <div class="input-wrap" id="profile-login-password-wrap">
+             <span class="input-icon">&#128274;</span
+             ><input
+               id="profile-login-password"
+               type="password"
+               placeholder="Enter your password"
+               minlength="6"
+               required
+             /><button class="password-toggle" type="button">Show</button>
+           </div>
+
+             <button type="button" class="forgot-link" id="profile-forgot-password-link" style="display:block;margin:10px auto 0;background:none;border:0;color:#2563eb;font-size:12px;font-weight:600;cursor:pointer;text-decoration:underline;">Forgot password?</button>
+             <button class="primary-button" type="submit" id="profile-login-submit-btn">
+               Sign in <span>&rarr;</span>
+             </button>
+           </form>
+        <form class="auth-form" id="profile-forgot-form" novalidate>
+          <p class="form-note" id="profile-forgot-step-note">Enter your email and we will send you a 6-digit OTP.</p>
+          <label for="profile-forgot-email">Email address</label>
           <div class="input-wrap">
             <span class="input-icon">&#9993;</span
             ><input
-              id="profile-login-email"
+              id="profile-forgot-email"
               type="email"
               placeholder="you@example.com"
               required
             />
           </div>
-          <label for="profile-login-password">Password</label>
-          <div class="input-wrap">
+          <label for="profile-forgot-otp" id="profile-forgot-otp-label" hidden>6-digit OTP</label>
+          <div class="input-wrap" id="profile-forgot-otp-wrap" hidden>
+            <span class="input-icon">&#128273;</span
+            ><input
+              id="profile-forgot-otp"
+              type="text"
+              inputmode="numeric"
+              maxlength="6"
+              pattern="[0-9]{6}"
+              placeholder="123456"
+            />
+          </div>
+          <label for="profile-forgot-new-password" id="profile-forgot-password-label" hidden>New password</label>
+          <div class="input-wrap" id="profile-forgot-password-wrap" hidden>
             <span class="input-icon">&#128274;</span
             ><input
-              id="profile-login-password"
+              id="profile-forgot-new-password"
               type="password"
-              placeholder="Enter your password"
+              placeholder="At least 6 characters"
+              autocomplete="new-password"
               minlength="6"
-              required
             /><button class="password-toggle" type="button">Show</button>
           </div>
-          <button type="button" class="forgot-link" id="profile-forgot-password-link" style="display:block;margin:10px auto 0;background:none;border:0;color:#2563eb;font-size:12px;font-weight:600;cursor:pointer;text-decoration:underline;">Forgot password?</button>
-          <button class="primary-button" type="submit">
-            Sign in <span>&rarr;</span>
+          <button class="primary-button" type="submit" id="profile-forgot-submit">
+            Send OTP <span>&rarr;</span>
+          </button>
+          <button
+            type="button"
+            class="forgot-link"
+            id="profile-forgot-back-link"
+            style="display:block;margin:10px auto 0;background:none;border:0;color:#2563eb;font-size:12px;font-weight:600;cursor:pointer;text-decoration:underline;"
+          >
+            Back to sign in
           </button>
         </form>
         <form class="auth-form" id="profile-register-form" novalidate>

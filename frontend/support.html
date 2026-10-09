@@ -52,7 +52,6 @@
       <nav aria-label="Store navigation">
         <a class="nav-link" href="index.html">Home</a>
         <a class="nav-link" href="index.html#products">Categories</a>
-        <a class="nav-link" href="index.html#offers">Offers</a>
         <a class="nav-link" href="index.html#wishlist">Wishlist</a>
         <a class="nav-link" href="index.html#orders">My orders</a>
         <a class="nav-link active" href="support.html">Support</a>
@@ -131,7 +130,6 @@
                 <option value="return">Return / Refund</option>
                 <option value="product">Product quality</option>
                 <option value="coupon">Coupon / Offer</option>
-                <option value="other">Other</option>
               </select>
             </div>
             <div>
@@ -176,7 +174,6 @@
           <select id="ticket-status-filter" onchange="renderTicketsTable()" style="padding: 10px; border: 1px solid var(--line); border-radius: 6px;">
             <option value="">All Status</option>
             <option value="open">Open</option>
-            <option value="in_progress">In Progress</option>
             <option value="resolved">Resolved</option>
             <option value="closed">Closed</option>
           </select>
@@ -392,7 +389,6 @@
               ${filtered.map(ticket => {
                 const isSelected = currentTicketId === ticket.id ? "background: #eff6ff;" : "";
                 const statusClass = ticket.status === 'open' ? 'style="background: #fee2e2; color: #991b1b;"' : 
-                                   ticket.status === 'in_progress' ? 'style="background: #fef3c7; color: #92400e;"' :
                                    ticket.status === 'resolved' ? 'style="background: #dcfce7; color: #166534;"' :
                                    'style="background: #e5e7eb; color: #374151;"';
                 const messagePreview = escapeHtml(ticket.message || "").slice(0, 80) + (ticket.message && ticket.message.length > 80 ? "..." : "");
@@ -472,7 +468,7 @@
           }
 
           const user = JSON.parse(localStorage.getItem("sriram-store-user") || "null");
-          const isOpen = ticket && (ticket.status === "open" || ticket.status === "in_progress");
+          const isOpen = ticket && ticket.status === "open";
           if (user?.id && isOpen) {
             replyEl.style.display = "block";
             replyEl.dataset.ticketId = id;

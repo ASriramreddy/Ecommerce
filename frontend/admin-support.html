@@ -157,33 +157,33 @@ body {
 
 .stats {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 15px;
     margin-bottom: 22px;
 }
 
 .stat {
     background: white;
-    padding: 20px;
-    border-radius: 12px;
+    padding: 14px;
+    border-radius: 10px;
     box-shadow: 0 2px 8px rgba(0,0,0,.06);
 }
 
 .stat h3 {
-    margin: 0 0 8px;
-    font-size: 14px;
+    margin: 0 0 6px;
+    font-size: 12px;
     color: #6b7280;
 }
 
 .stat strong {
-    font-size: 28px;
+    font-size: 22px;
 }
 
 .ticket-breakdown-card {
     width: 100%;
     border: 0;
-    padding: 20px;
-    border-radius: 12px;
+    padding: 14px;
+    border-radius: 10px;
     background: white;
     box-shadow: 0 2px 8px rgba(0,0,0,.06);
     color: #1f2937;
@@ -200,19 +200,24 @@ body {
     outline-offset: 2px;
 }
 
+.ticket-breakdown-card.active {
+    background: #eff6ff;
+    box-shadow: 0 0 0 1px #2563eb, 0 4px 14px rgba(37, 99, 235, .16);
+}
+
 .ticket-breakdown-card .stat-label {
     display: block;
-    margin: 0 0 8px;
+    margin: 0 0 6px;
     color: #6b7280;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 600;
 }
 
 .ticket-breakdown-hint {
     display: block;
-    margin-top: 6px;
+    margin-top: 4px;
     color: #2563eb;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
 }
 
@@ -226,9 +231,9 @@ body {
     display: grid;
     grid-template-columns: 1fr auto;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
     border: 0;
-    padding: 15px 0;
+    padding: 10px 0;
     border-bottom: 1px solid #e5e7eb;
     background: transparent;
     color: inherit;
@@ -248,17 +253,17 @@ body {
 
 .ticket-breakdown-label {
     color: #374151;
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 600;
 }
 
 .ticket-breakdown-count {
-    min-width: 32px;
-    padding: 4px 8px;
+    min-width: 28px;
+    padding: 3px 7px;
     border-radius: 999px;
     background: #eff6ff;
     color: #2563eb;
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 700;
     line-height: 1.2;
     text-align: right;
@@ -266,16 +271,16 @@ body {
 
 .category-filter {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 10px;
-    margin-bottom: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 8px;
+    margin-bottom: 14px;
 }
 
 .category-filter .ticket-breakdown-row {
     min-width: 0;
-    padding: 12px;
+    padding: 10px;
     border: 1px solid #e5e7eb;
-    border-radius: 10px;
+    border-radius: 8px;
     background: white;
     box-shadow: 0 2px 8px rgba(0,0,0,.06);
 }
@@ -302,7 +307,7 @@ body {
 }
 
 .ticket-breakdown-empty {
-    padding: 28px 0 18px;
+    padding: 20px 0 12px;
     color: #6b7280;
     text-align: center;
 }
@@ -310,8 +315,8 @@ body {
 .charts-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 18px;
-    margin-bottom: 22px;
+    gap: 12px;
+    margin-bottom: 16px;
 }
 
 @media (max-width: 900px) {
@@ -324,8 +329,8 @@ body {
 
 .toolbar {
     background: white;
-    padding: 15px;
-    border-radius: 12px;
+    padding: 12px;
+    border-radius: 10px;
     display: flex;
     gap: 12px;
     margin-bottom: 18px;
@@ -470,11 +475,6 @@ body {
 .open {
     background: #fee2e2;
     color: #991b1b;
-}
-
-.in_progress {
-    background: #fef3c7;
-    color: #92400e;
 }
 
 .resolved {
@@ -693,6 +693,7 @@ body {
         <button
             class="stat ticket-breakdown-card"
             type="button"
+            data-status=""
             onclick="filterByStatus('')"
         >
             <span class="stat-label">Total Tickets</span>
@@ -703,6 +704,7 @@ body {
         <button
             class="stat ticket-breakdown-card"
             type="button"
+            data-status="open"
             onclick="filterByStatus('open')"
         >
             <span class="stat-label">Open</span>
@@ -713,28 +715,30 @@ body {
         <button
             class="stat ticket-breakdown-card"
             type="button"
-            onclick="filterByStatus('in_progress')"
-        >
-            <span class="stat-label">In Progress</span>
-            <strong id="progressTickets">0</strong>
-            <span class="ticket-breakdown-hint">View in-progress</span>
-        </button>
-
-        <button
-            class="stat ticket-breakdown-card"
-            type="button"
+            data-status="resolved"
             onclick="filterByStatus('resolved')"
         >
             <span class="stat-label">Resolved</span>
             <strong id="resolvedTickets">0</strong>
             <span class="ticket-breakdown-hint">View resolved</span>
         </button>
+
+        <button
+            class="stat ticket-breakdown-card"
+            type="button"
+            data-status="closed"
+            onclick="filterByStatus('closed')"
+        >
+            <span class="stat-label">Closed</span>
+            <strong id="closedTickets">0</strong>
+            <span class="ticket-breakdown-hint">View closed</span>
+        </button>
     </div>
 
     <!-- Pie Chart Section -->
     <div class="charts-row">
         <div class="chart-section">
-            <div class="chart-card" style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.06); padding: 20px; height: 100%;">
+            <div class="chart-card" style="background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.06); padding: 14px; height: 100%;">
                 <h3 style="margin: 0 0 16px; font-size: 16px; color: #374151; font-weight: 600;">Tickets by Category</h3>
                 <div style="position: relative; height: 300px; max-width: 500px; margin: 0 auto;">
                     <canvas id="categoryPieChart"></canvas>
@@ -745,7 +749,7 @@ body {
 
         <!-- Category-Status Breakdown Chart -->
         <div class="chart-section">
-            <div class="chart-card" style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.06); padding: 20px; height: 100%;">
+            <div class="chart-card" style="background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.06); padding: 14px; height: 100%;">
                 <h3 style="margin: 0 0 16px; font-size: 16px; color: #374151; font-weight: 600;">Category vs Status Breakdown</h3>
                 <div style="position: relative; height: 300px; max-width: 800px; margin: 0 auto;">
                     <canvas id="categoryStatusChart"></canvas>
@@ -769,7 +773,6 @@ body {
         <select id="statusFilter" onchange="loadTickets()">
             <option value="">All Status</option>
             <option value="open">Open</option>
-            <option value="in_progress">In Progress</option>
             <option value="resolved">Resolved</option>
             <option value="closed">Closed</option>
         </select>
@@ -827,7 +830,6 @@ let activeTicketCategory = "";
 const ticketStatusLabels = {
     all: "Total Tickets",
     open: "Open Tickets",
-    in_progress: "In Progress Tickets",
     resolved: "Resolved Tickets"
 };
 
@@ -837,6 +839,7 @@ const ticketCategories = [
     { value: "return", label: "Returns & Refunds" },
     { value: "product", label: "Product Issues" },
     { value: "coupon", label: "Coupon/Offers" },
+    { value: "other", label: "Other" }
 ];
 
 
@@ -927,6 +930,7 @@ async function loadTickets() {
         tickets = Array.isArray(data) ? data : [];
         activeTicketStatus =
             document.getElementById("statusFilter").value || "all";
+        updateStatHighlight();
         updateStats();
         renderTickets();
 
@@ -961,6 +965,7 @@ async function loadCustomerTickets() {
 
         tickets = Array.isArray(data) ? data : [];
         activeTicketStatus = document.getElementById("statusFilter").value || "all";
+        updateStatHighlight();
         updateStats();
         renderTickets();
 
@@ -979,17 +984,22 @@ async function loadCustomerTickets() {
 
 function updateStats() {
 
+    const visibleTickets = getTicketsForBreakdown();
+
     document.getElementById("totalTickets").textContent =
-        tickets.length;
+        visibleTickets.length;
 
     document.getElementById("openTickets").textContent =
-        tickets.filter(t => t.status === "open").length;
-
-    document.getElementById("progressTickets").textContent =
-        tickets.filter(t => t.status === "in_progress").length;
+        visibleTickets.filter(t => t.status === "open" || t.status === "in_progress").length;
 
     document.getElementById("resolvedTickets").textContent =
-        tickets.filter(t => t.status === "resolved").length;
+        visibleTickets.filter(t => t.status === "resolved").length;
+
+    const closedEl = document.getElementById("closedTickets");
+    if (closedEl) {
+        closedEl.textContent =
+            visibleTickets.filter(t => t.status === "closed").length;
+    }
 
     renderCategoryFilter();
     renderCategoryPieChart();
@@ -1067,9 +1077,9 @@ function renderCategoryStatusChart() {
     const breakdownTickets = getTicketsForBreakdown();
     
     // Get status breakdown per category
-    const statuses = ['open', 'in_progress', 'resolved', 'closed'];
-    const statusLabels = { open: 'Open', in_progress: 'In Progress', resolved: 'Resolved', closed: 'Closed' };
-    const statusColors = { open: '#ef4444', in_progress: '#f59e0b', resolved: '#10b981', closed: '#6b7280' };
+    const statuses = ['open', 'resolved', 'closed'];
+    const statusLabels = { open: 'Open', resolved: 'Resolved', closed: 'Closed' };
+    const statusColors = { open: '#ef4444', resolved: '#10b981', closed: '#6b7280' };
     
     const categoryData = ticketCategories.map(cat => {
         const category = cat.value;
@@ -1078,8 +1088,9 @@ function renderCategoryStatusChart() {
         
         breakdownTickets.forEach(ticket => {
             const ticketCat = normalizeTicketCategory(ticket.category);
-            if (ticketCat === category && counts[ticket.status] !== undefined) {
-                counts[ticket.status] += 1;
+            const ticketStatus = ticket.status === "in_progress" ? "open" : ticket.status;
+            if (ticketCat === category && counts[ticketStatus] !== undefined) {
+                counts[ticketStatus] += 1;
             }
         });
         return { label: cat.label, counts };
@@ -1158,6 +1169,10 @@ function getTicketsForBreakdown() {
         return tickets;
     }
 
+    if (activeTicketStatus === "open") {
+        return tickets.filter(ticket => ticket.status === "open" || ticket.status === "in_progress");
+    }
+
     return tickets.filter(ticket => ticket.status === activeTicketStatus);
 }
 
@@ -1221,7 +1236,7 @@ function normalizeTicketCategory(category) {
         return "coupon";
     }
 
-    return "";
+    return "other";
 }
 
 
@@ -1291,6 +1306,13 @@ function filterByCategory(category) {
 }
 
 
+function updateStatHighlight() {
+    document.querySelectorAll(".ticket-breakdown-card").forEach((card) => {
+        const status = card.dataset.status || "";
+        card.classList.toggle("active", (status || "all") === (activeTicketStatus || "all"));
+    });
+}
+
 function filterByStatus(status) {
     const statusFilter = document.getElementById("statusFilter");
     if (!statusFilter) return;
@@ -1298,8 +1320,11 @@ function filterByStatus(status) {
     statusFilter.value = status || "";
     activeTicketStatus = status || "all";
     activeTicketCategory = "";
+    updateStatHighlight();
     renderTickets();
     renderCategoryFilter();
+    renderCategoryPieChart();
+    renderCategoryStatusChart();
 }
 
 
@@ -1397,7 +1422,7 @@ function getVisibleTickets() {
     const status = document.getElementById("statusFilter").value;
 
     return tickets.filter(ticket => {
-        const matchesStatus = !status || ticket.status === status;
+        const matchesStatus = !status || ticket.status === status || (status === "open" && ticket.status === "in_progress");
         const matchesCategory = !activeTicketCategory ||
             normalizeTicketCategory(ticket.category) === activeTicketCategory;
         const matchesSearch =
@@ -1712,11 +1737,6 @@ function renderConversation(ticket, replies) {
                     <option value="open"
                         ${ticket.status === "open" ? "selected" : ""}>
                         Open
-                    </option>
-
-                    <option value="in_progress"
-                        ${ticket.status === "in_progress" ? "selected" : ""}>
-                        In Progress
                     </option>
 
                     <option value="resolved"

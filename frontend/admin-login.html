@@ -37,24 +37,24 @@
 			.admin-tabs .tab { border: 0; border-radius: 6px; padding: 9px 18px; color: var(--adm-muted); background: transparent; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .2s; }
 			.admin-tabs .tab:hover { color: var(--adm-ink); }
 			.admin-tabs .tab.is-active { color: var(--adm-ink); }
-			.admin-panel { padding: 28px; border: 1px solid var(--adm-line); background: var(--adm-card); border-radius: 12px; box-shadow: 0 1px 3px rgba(32, 35, 33, .04); }
-			.admin-panel h2 { font-size: 22px; margin: 0 0 20px; }
-			.admin-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; align-items: end; }
-			.admin-form.login-form { grid-template-columns: 1fr 1fr auto; max-width: 720px; }
-			.admin-form label { display: flex; flex-direction: column; gap: 6px; color: var(--adm-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
-			.admin-form input, .admin-form select { width: 100%; border: 1px solid var(--adm-line); border-radius: 6px; padding: 10px 12px; color: var(--adm-ink); background: var(--adm-card); font-size: 13px; transition: border-color .2s, box-shadow .2s; }
+			.admin-panel { padding: 20px; border: 1px solid var(--adm-line); background: var(--adm-card); border-radius: 10px; box-shadow: 0 1px 3px rgba(32, 35, 33, .04); }
+			.admin-panel h2 { font-size: 18px; margin: 0 0 14px; }
+			.admin-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+			.admin-form.login-form { display: grid; grid-template-columns: 1fr 1fr auto; max-width: 720px; }
+			.admin-form label { display: flex; flex-direction: column; gap: 4px; color: var(--adm-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+			.admin-form input, .admin-form select { width: 100%; border: 1px solid var(--adm-line); border-radius: 6px; padding: 8px 10px; color: var(--adm-ink); background: var(--adm-card); font-size: 12px; transition: border-color .2s, box-shadow .2s; }
 			.admin-form input:focus, .admin-form select:focus { outline: 0; border-color: var(--adm-accent); box-shadow: 0 0 0 3px rgba(56, 91, 69, .12); }
-			.admin-form .primary-button { border: 0; border-radius: 6px; padding: 10px 20px; color: #fff; background: var(--adm-accent); font-weight: 700; cursor: pointer; font-size: 13px; transition: background .2s; height: 38px; }
+			.admin-form .primary-button { border: 0; border-radius: 6px; padding: 8px 10px; color: #fff; background: var(--adm-accent); font-weight: 700; cursor: pointer; font-size: 11px; transition: background .2s; flex: 0 0 auto; width: auto; min-width: auto; }
 			.admin-form .primary-button:hover { background: var(--adm-accent-dark); }
 			.admin-form .primary-button:disabled { opacity: .6; cursor: not-allowed; }
-			.admin-field { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid var(--adm-line); border-radius: 8px; background: var(--adm-card); transition: box-shadow .2s; }
+			.admin-field { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px solid var(--adm-line); border-radius: 6px; background: var(--adm-card); transition: box-shadow .2s; flex: 1 1 140px; min-width: 140px; }
 			.admin-field:focus-within { box-shadow: 0 0 0 3px rgba(56, 91, 69, .08); border-color: var(--adm-accent); }
-			.admin-field label { color: var(--adm-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
-			.admin-field input { border: 1px solid var(--adm-line); border-radius: 5px; padding: 9px 10px; color: var(--adm-ink); background: var(--adm-surface); font-size: 13px; }
+			.admin-field label { color: var(--adm-muted); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+			.admin-field input { border: 1px solid var(--adm-line); border-radius: 5px; padding: 7px 8px; color: var(--adm-ink); background: var(--adm-surface); font-size: 12px; }
 			.admin-field input:focus { border-color: var(--adm-accent); box-shadow: 0 0 0 3px rgba(56, 91, 69, .12); background: var(--adm-card); }
-			.admin-table { width: 100%; margin-top: 24px; border-collapse: separate; border-spacing: 0; font-size: 13px; }
-			.admin-table th, .admin-table td { padding: 12px 14px; border-bottom: 1px solid var(--adm-line); text-align: left; vertical-align: middle; }
-			.admin-table thead th { color: var(--adm-muted); font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; background: var(--adm-surface); position: sticky; top: 0; }
+			.admin-table { width: 100%; margin-top: 18px; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+			.admin-table th, .admin-table td { padding: 8px 10px; border-bottom: 1px solid var(--adm-line); text-align: left; vertical-align: middle; }
+			.admin-table thead th { color: var(--adm-muted); font-size: 9px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; background: var(--adm-surface); position: sticky; top: 0; }
 			.admin-table tbody tr:hover { background: #f6f8f3; }
 			.admin-table tbody td { color: var(--adm-ink); }
 			.stock-control { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -63,10 +63,10 @@
 			.stock-control button { border: 0; border-radius: 5px; padding: 7px 12px; color: #fff; background: var(--adm-accent); font-size: 11px; font-weight: 700; cursor: pointer; transition: background .2s; }
 			.stock-control button:hover { background: var(--adm-accent-dark); }
 			.stock-control button:disabled { opacity: .5; cursor: not-allowed; }
-			.admin-table img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; border: 1px solid var(--adm-line); }
+			.admin-table img { width: 32px; height: 32px; object-fit: cover; border-radius: 6px; border: 1px solid var(--adm-line); }
 			.delete-button { border: 0; color: var(--adm-danger); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 4px; transition: background .2s; }
 			.delete-button:hover { background: #fdeceb; }
-			.admin-error { min-height: 20px; margin: 16px 0 0; color: var(--adm-danger); font-size: 12px; }
+			.admin-error { min-height: 20px; margin: 12px 0 0; color: var(--adm-danger); font-size: 12px; }
 			.admin-toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 18px; border: 1px solid #cadbc6; color: var(--adm-accent-dark); background: #f1f7ee; box-shadow: 0 4px 12px rgba(32, 35, 33, .08); font-size: 13px; border-radius: 8px; z-index: 50; animation: appear .25s ease; }
 			.admin-select { width: 100%; border: 1px solid var(--adm-line); border-radius: 6px; padding: 8px 10px; color: var(--adm-ink); background: var(--adm-surface); font-size: 12px; }
 			.admin-select:focus { outline: 0; border-color: var(--adm-accent); box-shadow: 0 0 0 3px rgba(56, 91, 69, .12); background: var(--adm-card); }
@@ -105,13 +105,14 @@
 					<button class="tab" id="admin-logout" type="button" hidden>Logout</button>
 				</div>
 			</header>
-			<div class="admin-tabs" role="tablist" aria-label="Admin sections">
+				<div class="admin-tabs" role="tablist" aria-label="Admin sections">
 					<button class="tab is-active" id="products-tab" type="button" role="tab" aria-selected="true">Products</button>
 					<button class="tab" id="customers-tab" type="button" role="tab" aria-selected="false">Customers</button>
 					<button class="tab" id="orders-tab" type="button" role="tab" aria-selected="false">Orders</button>
 					<button class="tab" id="support-tab" type="button" role="tab" aria-selected="false">Support<span class="admin-support-tab-badge" id="admin-support-badge" style="display:none;"></span></button>
 					<button class="tab" id="coupons-tab" type="button" role="tab" aria-selected="false">Coupons</button>
 					<button class="tab" id="offers-tab" type="button" role="tab" aria-selected="false">Offers</button>
+					<button class="tab" id="stock-alerts-tab" type="button" role="tab" aria-selected="false">Stock Alerts</button>
 				</div>
 				<section class="admin-panel" id="login-panel">
 					<form id="admin-login-form" class="admin-form login-form">
@@ -260,6 +261,13 @@
 					<p class="admin-error" id="offer-error" role="alert"></p>
 					<table class="admin-table"><thead><tr><th>Name</th><th>Festival</th><th>Coupon</th><th>Discount</th><th>Min order</th><th>Scope</th><th>Window</th><th>Image</th><th>Status</th><th></th></tr></thead><tbody id="offer-list"></tbody></table>
 				</section>
+				<section class="admin-panel" id="stock-alerts-panel" hidden>
+					<p class="eyebrow">Inventory</p>
+					<h2>Stock Alerts</h2>
+					<p style="margin:0 0 12px;color:var(--adm-muted);font-size:12px;">Customers who asked to be notified when an out-of-stock product becomes available.</p>
+					<table class="admin-table"><thead><tr><th>ID</th><th>Product</th><th>Current Stock</th><th>Email</th><th>Active</th><th>Requested</th></tr></thead><tbody id="stock-alert-list"></tbody></table>
+					<p class="admin-error" id="stock-alert-error" role="alert"></p>
+				</section>
 			</div>
 		</main>
 		<script>
@@ -274,9 +282,10 @@ const API_BASE =
 			const dashboard = document.querySelector("#dashboard");
 			const customersPanel = document.querySelector("#customers-panel");
 			const ordersPanel = document.querySelector("#orders-panel");
-			const couponsPanel = document.querySelector("#coupons-panel");
-			const offersPanel = document.querySelector("#offers-panel");
-			const supportPanel = document.querySelector("#support-panel");
+		const couponsPanel = document.querySelector("#coupons-panel");
+		const offersPanel = document.querySelector("#offers-panel");
+		const stockAlertsPanel = document.querySelector("#stock-alerts-panel");
+		const supportPanel = document.querySelector("#support-panel");
 			const adminError = document.querySelector("#admin-error");
 			const productError = document.querySelector("#product-error");
 			const customerError = document.querySelector("#customer-error");
@@ -308,10 +317,16 @@ const API_BASE =
 				showToast.timer = window.setTimeout(() => { toast.remove(); }, 3000);
 			}
 
-			function showPanel(panel) {
-				[loginPanel, dashboard, customersPanel, ordersPanel, couponsPanel, offersPanel, supportPanel].forEach((p) => { if (p) p.hidden = true; });
-				panel.hidden = false;
+		function showPanel(panel) {
+			[loginPanel, dashboard, customersPanel, ordersPanel, couponsPanel, offersPanel, stockAlertsPanel, supportPanel].forEach((p) => { if (p) p.hidden = true; });
+			panel.hidden = false;
+			const tabs = document.querySelector(".admin-tabs");
+			if (panel === loginPanel) {
+				tabs.style.display = "none";
+			} else {
+				tabs.style.display = "";
 			}
+		}
 
 			function updateAdminHeader() {
 				const loggedIn = !!localStorage.getItem(tokenKey);
@@ -471,15 +486,18 @@ const API_BASE =
 				list.innerHTML = products.map(product => `<tr><td>${product.image ? `<img src="${product.image}" alt="">` : "-"}</td><td>${product.name}</td><td>Rs ${Number(product.price).toLocaleString("en-IN")}</td><td>${product.category}</td><td><div class="stock-control"><input type="number" min="0" step="1" value="${Number(product.stock) || 0}" data-stock-input="${product.id}" aria-label="Stock for ${product.name}"><input type="number" min="0" max="100" step="0.01" value="${Number(product.discount) || 0}" data-discount-input="${product.id}" aria-label="Discount for ${product.name}"><button type="button" class="primary-button" data-stock="${product.id}">Save</button></div></td><td>${Number(product.discount) || 0}%</td><td><button class="delete-button" data-id="${product.id}">Delete</button></td></tr>`).join("");
 			}
 
-			async function showDashboard() {
-				showPanel(dashboard);
-				updateAdminHeader();
-				try { 
-					await loadProducts(); 
-					await loadAdminNotifications();
-					startNotificationPolling();
-				} catch (error) { productError.textContent = error.message; }
-			}
+		async function showDashboard() {
+			showPanel(dashboard);
+			updateAdminHeader();
+			document.querySelectorAll(".admin-tabs .tab").forEach((t) => { t.classList.remove("is-active"); t.setAttribute("aria-selected", "false"); });
+			const productsTab = document.querySelector("#products-tab");
+			if (productsTab) { productsTab.classList.add("is-active"); productsTab.setAttribute("aria-selected", "true"); }
+			try { 
+				await loadProducts(); 
+				await loadAdminNotifications();
+				startNotificationPolling();
+			} catch (error) { productError.textContent = error.message; }
+		}
 
 			async function loadCustomers() {
 				const customers = await request("/admin/customers");
@@ -680,6 +698,7 @@ const API_BASE =
 				}
 			} else {
 				updateAdminHeader();
+				document.querySelector(".admin-tabs").style.display = "none";
 			}
 
 			document.querySelector("#products-tab").addEventListener("click", async () => {
@@ -930,14 +949,37 @@ const API_BASE =
 				}
 			}
 
-			document.querySelector("#offers-tab").addEventListener("click", async () => {
-				document.querySelectorAll(".admin-tabs .tab").forEach((t) => { t.classList.remove("is-active"); t.setAttribute("aria-selected", "false"); });
-				document.querySelector("#offers-tab").classList.add("is-active");
-				document.querySelector("#offers-tab").setAttribute("aria-selected", "true");
-				showPanel(offersPanel);
-				resetOfferForm();
-				await loadOffersPanel();
-			});
+		document.querySelector("#offers-tab").addEventListener("click", async () => {
+			document.querySelectorAll(".admin-tabs .tab").forEach((t) => { t.classList.remove("is-active"); t.setAttribute("aria-selected", "false"); });
+			document.querySelector("#offers-tab").classList.add("is-active");
+			document.querySelector("#offers-tab").setAttribute("aria-selected", "true");
+			showPanel(offersPanel);
+			resetOfferForm();
+			await loadOffersPanel();
+		});
+
+		document.querySelector("#stock-alerts-tab").addEventListener("click", async () => {
+			document.querySelectorAll(".admin-tabs .tab").forEach((t) => { t.classList.remove("is-active"); t.setAttribute("aria-selected", "false"); });
+			document.querySelector("#stock-alerts-tab").classList.add("is-active");
+			document.querySelector("#stock-alerts-tab").setAttribute("aria-selected", "true");
+			showPanel(stockAlertsPanel);
+			await loadStockAlerts();
+		});
+
+		async function loadStockAlerts() {
+			try {
+				const rows = await request("/admin/stock-alerts");
+				const list = document.querySelector("#stock-alert-list");
+				if (!list) return;
+				if (!rows || !rows.length) {
+					list.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">No stock alerts yet</td></tr>';
+					return;
+				}
+				list.innerHTML = rows.map((r) => `<tr><td>${r.id}</td><td>${escapeHtml(r.product_name || `Product ${r.product_id}`)}</td><td>${Number(r.stock) || 0}</td><td>${escapeHtml(r.email)}</td><td>${r.is_active ? 'Yes' : 'No'}</td><td>${new Date(r.created_at).toLocaleString()}</td></tr>`).join("");
+			} catch (error) {
+				document.querySelector("#stock-alert-error").textContent = error.message;
+			}
+		}
 
 			function resetOfferForm() {
 				editingOfferId = null;

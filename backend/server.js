@@ -726,6 +726,7 @@ const supportReady = databaseReady.then(async () => {
             FOREIGN KEY (ticket_id) REFERENCES support_tickets(id) ON DELETE CASCADE
         )
     `);
+    await dbPromise.query("UPDATE support_tickets SET status = 'open' WHERE status = 'in_progress'");
     console.log("✅ Support tables are ready");
 }).catch((error) => {
     console.error("❌ Support tables setup failed:", error.message);
@@ -829,6 +830,27 @@ const passwordResetReady = databaseReady.then(async () => {
     throw error;
 });
 
+const loginOtpReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS login_otps (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            otp VARCHAR(6) NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            used BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            INDEX idx_email_otp (email, otp)
+        )
+    `);
+    console.log("✅ Login OTPs table is ready");
+}).catch((error) => {
+    console.error("❌ Login OTPs table setup failed:", error.message);
+    throw error;
+});
+
 const spinPrizesReady = databaseReady.then(async () => {
     const dbPromise = db.promise();
     await dbPromise.query(`
@@ -886,7 +908,46 @@ const adminSessionsReady = databaseReady.then(async () => {
     throw error;
 });
 
-Promise.all([inventoryReady, profilesReady, ordersReady, deliveryChargesReady, couponsReady, festivalsReady, offersReady, supportReady, notificationsReady, reviewsReady, dailyRewardsReady, passwordResetReady, spinPrizesReady, adminSessionsReady, userSpinAttemptsReady])
+const recentlyViewedReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS user_recently_viewed (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            product_id INT NOT NULL,
+            viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_user (user_id, viewed_at),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `);
+    console.log("✅ Recently viewed table is ready");
+}).catch((error) => {
+    console.error("❌ Recently viewed table setup failed:", error.message);
+    throw error;
+});
+
+const stockAlertsReady = databaseReady.then(async () => {
+    const dbPromise = db.promise();
+    await dbPromise.query(`
+        CREATE TABLE IF NOT EXISTS stock_alerts (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            product_id INT NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_product (product_id),
+            INDEX idx_user (user_id),
+            UNIQUE KEY unique_user_product (user_id, product_id)
+        )
+    `);
+    console.log("✅ Stock alerts table is ready");
+}).catch((error) => {
+    console.error("❌ Stock alerts table setup failed:", error.message);
+    throw error;
+});
+
+Promise.all([inventoryReady, profilesReady, ordersReady, deliveryChargesReady, couponsReady, festivalsReady, offersReady, supportReady, notificationsReady, reviewsReady, dailyRewardsReady, passwordResetReady, loginOtpReady, spinPrizesReady, adminSessionsReady, userSpinAttemptsReady, recentlyViewedReady, stockAlertsReady])
     .then(() => console.log("✅ All tables are ready"))
     .catch((error) => console.error("❌ Schema setup encountered errors:", error.message));
 
@@ -1077,6 +1138,132 @@ app.get("/health", (req, res) => {
     });
 });
 
+app.post("/products/:id/viewed", async (req, res) => {
+    const productId = Number(req.params.id);
+    const body = req.body || {};
+    const userId = Number(body.userId);
+    if (!Number.isInteger(productId) || productId < 1) return res.status(400).json({ error: "Valid product id is required" });
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    try {
+        await inventoryReady;
+        await recentlyViewedReady;
+        const [[product]] = await db.promise().query("SELECT id FROM products WHERE id = ?", [productId]);
+        if (!product) return res.status(404).json({ error: "Product not found" });
+        await db.promise().query(
+            "INSERT INTO user_recently_viewed (user_id, product_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE viewed_at = CURRENT_TIMESTAMP",
+            [userId, productId]
+        );
+        await db.promise().query("DELETE FROM user_recently_viewed WHERE user_id = ? AND product_id = ? AND id NOT IN (SELECT id FROM (SELECT id FROM user_recently_viewed WHERE user_id = ? AND product_id = ? ORDER BY viewed_at DESC LIMIT 20) AS t)", [userId, productId, userId, productId]);
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Track view failed:", error.message);
+        res.status(503).json({ error: "Could not track view" });
+    }
+});
+
+app.get("/products/recently-viewed", async (req, res) => {
+    const userId = Number(req.query.userId);
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    try {
+        await inventoryReady;
+        await recentlyViewedReady;
+        const [rows] = await db.promise().query(
+            `SELECT p.id, p.name, p.price, p.category, p.image, p.description, p.stock, p.discount, p.expiry,
+                    COALESCE(AVG(r.rating), 0) as rating, COALESCE(COUNT(r.id), 0) as reviews
+             FROM user_recently_viewed urv
+             JOIN products p ON p.id = urv.product_id
+             LEFT JOIN reviews r ON r.product_id = p.id
+             WHERE urv.user_id = ?
+             GROUP BY p.id
+             ORDER BY urv.viewed_at DESC
+             LIMIT 20`,
+            [userId]
+        );
+        res.json(rows);
+    } catch (error) {
+        console.error("Recently viewed fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load recently viewed" });
+    }
+});
+
+app.post("/stock-alerts", async (req, res) => {
+    const body = req.body || {};
+    const userId = Number(body.userId);
+    const productId = Number(body.productId);
+    const email = String(body.email || "").trim();
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    if (!Number.isInteger(productId) || productId < 1) return res.status(400).json({ error: "Valid product id is required" });
+    if (!email) return res.status(400).json({ error: "Email is required" });
+    try {
+        await inventoryReady;
+        await stockAlertsReady;
+        const [[product]] = await db.promise().query("SELECT id FROM products WHERE id = ?", [productId]);
+        if (!product) return res.status(404).json({ error: "Product not found" });
+        await db.promise().query(
+            "INSERT INTO stock_alerts (user_id, product_id, email) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE is_active = 1",
+            [userId, productId, email]
+        );
+        res.json({ success: true, message: "You will be notified when this product is back in stock" });
+    } catch (error) {
+        console.error("Stock alert failed:", error.message);
+        res.status(503).json({ error: "Could not subscribe to stock alert" });
+    }
+});
+
+app.get("/stock-alerts", async (req, res) => {
+    const userId = Number(req.query.userId);
+    const productId = Number(req.query.productId);
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    try {
+        await stockAlertsReady;
+        let rows;
+        if (Number.isInteger(productId) && productId > 0) {
+            const [result] = await db.promise().query("SELECT id, product_id, is_active, created_at FROM stock_alerts WHERE user_id = ? AND product_id = ?", [userId, productId]);
+            rows = result;
+        } else {
+            const [result] = await db.promise().query("SELECT id, product_id, is_active, created_at FROM stock_alerts WHERE user_id = ?", [userId]);
+            rows = result;
+        }
+        res.json(rows);
+    } catch (error) {
+        console.error("Stock alerts fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load stock alerts" });
+    }
+});
+
+app.delete("/stock-alerts/:productId", async (req, res) => {
+    const userId = Number(req.query.userId);
+    const productId = Number(req.params.productId);
+    if (!Number.isInteger(userId) || userId < 1) return res.status(400).json({ error: "Valid user id is required" });
+    if (!Number.isInteger(productId) || productId < 1) return res.status(400).json({ error: "Valid product id is required" });
+    try {
+        await stockAlertsReady;
+        const [result] = await db.promise().query("DELETE FROM stock_alerts WHERE user_id = ? AND product_id = ?", [userId, productId]);
+        if (!result.affectedRows) return res.status(404).json({ error: "Stock alert not found" });
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Stock alert delete failed:", error.message);
+        res.status(503).json({ error: "Could not remove stock alert" });
+    }
+});
+
+app.get("/admin/stock-alerts", requireAdmin, async (req, res) => {
+    try {
+        await stockAlertsReady;
+        await inventoryReady;
+        const [rows] = await db.promise().query(
+            `SELECT sa.id, sa.product_id, p.name as product_name, p.stock, sa.email, sa.is_active, sa.created_at
+             FROM stock_alerts sa
+             JOIN products p ON p.id = sa.product_id
+             ORDER BY sa.created_at DESC`
+        );
+        res.json(rows);
+    } catch (error) {
+        console.error("Admin stock alerts fetch failed:", error.message);
+        res.status(503).json({ error: "Could not load stock alerts" });
+    }
+});
+
 function hashPassword(password) {
     const salt = crypto.randomBytes(16).toString("hex");
     const hash = crypto.scryptSync(password, salt, 64).toString("hex");
@@ -1106,30 +1293,12 @@ app.post("/auth/register", async (req, res) => {
 
     try {
         await databaseReady;
-        const verificationToken = crypto.randomBytes(32).toString("hex");
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
         const [result] = await db.promise().query(
-            "INSERT INTO users (name, email, password_hash, email_verified, verification_token, verification_token_expires) VALUES (?, ?, ?, FALSE, ?, ?)",
-            [name, email, hashPassword(password), verificationToken, expiresAt]
+            "INSERT INTO users (name, email, password_hash, email_verified) VALUES (?, ?, ?, TRUE)",
+            [name, email, hashPassword(password)]
         );
 
-        if (emailTransporter) {
-            const verifyUrl = `${process.env.FRONTEND_URL || "http://localhost:3000"}/verify-email.html?token=${verificationToken}`;
-            try {
-                await emailTransporter.sendMail({
-                    from: `Sriram Store <${EMAIL_USER}>`,
-                    to: email,
-                    subject: "Verify your email - Sriram Store",
-                    text: `Welcome to Sriram Store! Please verify your email by clicking this link: ${verifyUrl}. This link expires in 24 hours.`,
-                    html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:20px;"><h2 style="color:#2c5f2d;">Welcome to Sriram Store!</h2><p>Thank you for registering. Please verify your email address by clicking the button below:</p><p style="text-align:center;margin:30px 0;"><a href="${verifyUrl}" style="background:#2c5f2d;color:#fff;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:bold;">Verify Email</a></p><p>Or copy this link: ${verifyUrl}</p><p style="color:#666;font-size:12px;">This link expires in 24 hours. If you didn't create an account, please ignore this email.</p></div>`
-                });
-            } catch (e) {
-                console.error("Failed to send verification email:", e.message);
-            }
-        }
-
-        res.status(201).json({ message: "Account created. Please check your email to verify your account." });
+        res.status(201).json({ message: "Account created. Please sign in.", user: { id: result.insertId, name, email } });
     } catch (error) {
         if (error.code === "ER_DUP_ENTRY") return res.status(409).json({ error: "An account with this email already exists" });
         console.error("Registration failed:", error.message);
@@ -1280,6 +1449,67 @@ app.post("/auth/reset-password", async (req, res) => {
     } catch (error) {
         console.error("Password reset failed:", error.message);
         res.status(503).json({ error: "Could not reset password" });
+    }
+});
+
+app.post("/auth/send-login-otp", async (req, res) => {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    if (!email || !email.includes("@")) return res.status(400).json({ error: "Valid email is required" });
+    try {
+        await databaseReady;
+        await loginOtpReady;
+        const [rows] = await db.promise().query("SELECT id, name, email FROM users WHERE email = ?", [email]);
+        if (!rows.length) return res.status(404).json({ error: "No account found with this email" });
+        const user = rows[0];
+        const otp = String(Math.floor(100000 + Math.random() * 900000));
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        await db.promise().query(
+            "INSERT INTO login_otps (user_id, email, otp, expires_at) VALUES (?, ?, ?, ?)",
+            [user.id, email, otp, expiresAt]
+        );
+        if (emailTransporter) {
+            try {
+                await emailTransporter.sendMail({
+                    from: `Sriram Store <${EMAIL_USER}>`,
+                    to: email,
+                    subject: "Your Login OTP - Sriram Store",
+                    text: `Your OTP for login is: ${otp}. This OTP is valid for 10 minutes.`,
+                    html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:20px;"><h2 style="color:#2c5f2d;">Login OTP</h2><p>Your OTP for login is:</p><div style="font-size:32px;font-weight:bold;color:#2c5f2d;letter-spacing:4px;padding:20px;background:#f0f7ee;border-radius:8px;text-align:center;">${otp}</div><p>This OTP is valid for 10 minutes.</p><p style="color:#666;font-size:12px;">If you didn't request this, please ignore this email.</p></div>`
+                });
+            } catch (e) {
+                console.error("Failed to send login OTP email:", e.message);
+            }
+        }
+        res.json({ message: "OTP sent to your email. Please check your inbox.", otpSent: true });
+    } catch (error) {
+        console.error("Send login OTP failed:", error.message);
+        res.status(503).json({ error: "Could not process request" });
+    }
+});
+
+app.post("/auth/verify-login-otp", async (req, res) => {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const otp = String(req.body?.otp || "").trim();
+    if (!email || !email.includes("@") || !otp || otp.length !== 6) {
+        return res.status(400).json({ error: "Valid email and 6-digit OTP are required" });
+    }
+    try {
+        await databaseReady;
+        await loginOtpReady;
+        const [rows] = await db.promise().query(
+            "SELECT id, user_id FROM login_otps WHERE email = ? AND otp = ? AND expires_at > NOW() AND used = FALSE ORDER BY created_at DESC LIMIT 1",
+            [email, otp]
+        );
+        if (!rows.length) return res.status(400).json({ error: "Invalid or expired OTP" });
+        const loginOtp = rows[0];
+        await db.promise().query("UPDATE login_otps SET used = TRUE WHERE id = ?", [loginOtp.id]);
+        const [userRows] = await db.promise().query("SELECT id, name, email FROM users WHERE id = ?", [loginOtp.user_id]);
+        if (!userRows.length) return res.status(404).json({ error: "User not found" });
+        const user = userRows[0];
+        res.json({ success: true, user: { id: user.id, name: user.name, email: user.email }, message: "Login successful" });
+    } catch (error) {
+        console.error("Login OTP verification failed:", error.message);
+        res.status(503).json({ error: "Could not verify OTP" });
     }
 });
 
@@ -3315,4 +3545,17 @@ app.post("/api/daily-reward/spin", async (req, res) => {
         console.error("Spin failed:", error.message);
         res.status(503).json({ error: "Spin failed. Please try again." });
     }
+});
+
+app.use((err, req, res, next) => {
+    console.error("Unhandled error:", err.message);
+    if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+        return res.status(400).json({ error: "Invalid JSON in request body" });
+    }
+    if (res.headersSent) return next(err);
+    res.status(err.status || 500).json({ error: err.message || "Internal server error" });
+});
+
+app.use((req, res) => {
+    res.status(404).json({ error: "Not found" });
 });
