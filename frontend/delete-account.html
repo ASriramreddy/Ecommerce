@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Delete your Sriram Store account." />
+    <title>Delete Account | Sriram Store</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="delete-account-page">
+      <a class="brand" href="index.html">
+        <span class="brand-mark">S</span>
+        <strong>Sriram Store</strong>
+      </a>
+      <main class="delete-account-card">
+        <div class="form-heading">
+          <p class="eyebrow">Danger zone</p>
+          <h2>Delete your account</h2>
+          <p>This action cannot be undone.</p>
+        </div>
+        <div class="toast" id="toast" role="status" aria-live="polite">
+          <span class="toast-icon">&#10003;</span><span id="toast-message"></span>
+        </div>
+        <p class="form-note" id="delete-account-warning">
+          Deleting your account will <strong>permanently remove your personal data</strong>,
+          including your profile, saved addresses, wishlist, reviews, and stock alerts.
+          Your order and invoice history will be preserved as required by law.
+          This action cannot be undone.
+        </p>
+        <div class="delete-account-actions">
+          <a class="secondary-button" href="index.html">Cancel</a>
+          <button class="primary-button danger-button" type="button" id="delete-account-confirm">
+            Delete Account <span>&rarr;</span>
+          </button>
+        </div>
+        <p class="auth-error" id="delete-account-error" role="alert" aria-live="polite"></p>
+        <p class="form-note" style="margin-top:18px;">
+          <a href="index.html" class="inline-action" style="font-size:12px;">&larr; Back to my account</a>
+        </p>
+      </main>
+    </div>
+    <script src="script.js"></script>
+  </body>
+</html>

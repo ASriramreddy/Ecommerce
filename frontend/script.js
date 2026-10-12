@@ -1,25 +1,12 @@
 // The backend always runs on port 3000. The frontend may be served by the backend
 // itself (localhost:3000), by a Live Server on another port (e.g. 127.0.0.1:5501),
-// or from a separate host such as Vercel. In every case the API is the backend.
-const PRODUCTION_API_URL = "https://ecommerce-1-r5m4.onrender.com";
-const BACKEND_ORIGIN = "http://localhost:3000";
-
-function resolveApiUrl() {
-  const { protocol, hostname, port, origin } = window.location;
-  // Opened straight from disk.
-  if (protocol === "file:") return BACKEND_ORIGIN;
-  const isLocalHost = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(hostname);
-  // Served directly by the backend.
-  if (port === "3000") return origin || BACKEND_ORIGIN;
-  // Live Server / static server on a local port.
-  if (isLocalHost) return BACKEND_ORIGIN;
-  // Deployed on the same host as the API.
-  if (origin && origin !== "null" && origin === PRODUCTION_API_URL) return origin;
-  // Deployed on a different host (e.g. Vercel) - call the API host directly.
-  return PRODUCTION_API_URL;
-}
-
-const API_URL = resolveApiUrl();
+// opened as a local file (file:///...), or from a separate host such as Vercel.
+// In every case the API is the backend.
+const isLocal =
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1" ||
+  window.location.protocol === "file:";
+const API_URL = isLocal ? "http://localhost:3000" : "https://ecommerce-1-r5m4.onrender.com";
 const API_BASE = API_URL;
 const ORDER_REQUEST_TIMEOUT_MS = 20000;
 
@@ -614,26 +601,39 @@ function setAuthenticated(user) {
   if (user) {
     localStorage.setItem(authStorageKey, JSON.stringify(user));
     document.body.classList.remove("auth-locked");
-    authModal.setAttribute("aria-hidden", "true");
-    document.querySelector("#account-button").textContent = user.name;
-    document.querySelector("#logout-button").hidden = false;
-    loadProducts();
+    if (authModal) authModal.setAttribute("aria-hidden", "true");
+    const accountButton = document.querySelector("#account-button");
+    if (accountButton) {
+      accountButton.textContent = user.name || "Account";
+      accountButton.classList.add("account-button-logged-in");
+    }
+    const logoutButton = document.querySelector("#logout-button");
+    if (logoutButton) logoutButton.hidden = false;
+     loadProducts();
     renderOrders();
     renderNotifications();
     startServerNotificationPolling();
     startOrderRefresh();
     loadReferralData();
+    checkSpinStatus();
     return;
   }
   stopServerNotificationPolling();
   stopOrderRefresh();
   localStorage.removeItem(authStorageKey);
   document.body.classList.add("auth-locked");
-  authModal.setAttribute("aria-hidden", "false");
+  closeAccountDropdown();
+  if (authModal) authModal.setAttribute("aria-hidden", "false");
   closeProfile();
-  document.querySelector("#account-button").textContent = "Account";
-  document.querySelector("#logout-button").hidden = true;
-  renderNotifications();
+   const accountButton = document.querySelector("#account-button");
+   if (accountButton) {
+     accountButton.textContent = "Account";
+     accountButton.classList.remove("account-button-logged-in");
+   }
+   const logoutButton = document.querySelector("#logout-button");
+   if (logoutButton) logoutButton.hidden = true;
+   renderNotifications();
+   checkSpinStatus();
 }
 
 function showWelcomeSpinIfNew(user) {
@@ -678,6 +678,8 @@ function openProfile() {
   profileError.textContent = "";
   profileModal.setAttribute("aria-hidden", "false");
   profileModal.classList.add("open");
+  const profileSummary = document.querySelector("#profile-summary");
+  if (profileSummary) profileSummary.hidden = true;
   if (user) {
     document.querySelector("#profile-title").textContent = user.name || "Your profile";
     document.querySelector("#profile-subtitle").textContent = user.email || "Signed in account";
@@ -694,8 +696,222 @@ function openProfile() {
 }
 
 function closeProfile() {
-  profileModal.classList.remove("open");
-  profileModal.setAttribute("aria-hidden", "true");
+  if (profileModal) {
+    profileModal.classList.remove("open");
+    profileModal.setAttribute("aria-hidden", "true");
+  }
+}
+
+function closeAccountDropdown() {
+  const dropdown = document.querySelector("#account-dropdown");
+  const button = document.querySelector("#account-button");
+  if (dropdown) dropdown.classList.remove("open");
+  if (button) button.setAttribute("aria-expanded", "false");
+}
+
+function openAccountDropdown() {
+  const dropdown = document.querySelector("#account-dropdown");
+  const button = document.querySelector("#account-button");
+  if (dropdown) dropdown.classList.add("open");
+  if (button) button.setAttribute("aria-expanded", "true");
+}
+
+function openDeleteConfirm() {
+  const modal = document.querySelector("#delete-confirm-modal");
+  const errorEl = document.querySelector("#delete-confirm-error");
+  if (errorEl) errorEl.textContent = "";
+  if (!modal) return;
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+}
+
+function closeDeleteConfirm() {
+   const modal = document.querySelector("#delete-confirm-modal");
+   if (!modal) return;
+   modal.classList.remove("open");
+   modal.setAttribute("aria-hidden", "true");
+}
+
+function openAccountInfo() {
+  const modal = document.querySelector("#account-info-modal");
+   const errorEl = document.querySelector("#account-info-error");
+  if (errorEl) errorEl.textContent = "";
+  if (!modal) return;
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+  showAccountInfo();
+}
+
+function closeAccountInfo() {
+  const modal = document.querySelector("#account-info-modal");
+  if (!modal) return;
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+async function showAccountInfo() {
+  const summaryEl = document.querySelector("#account-info-summary");
+  const errorEl = document.querySelector("#account-info-error");
+  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+  if (!summaryEl) return;
+  if (!user?.id) {
+    if (errorEl) errorEl.textContent = "You must be signed in to view your account";
+    return;
+  }
+  summaryEl.hidden = true;
+  if (!user.email) {
+    summaryEl.innerHTML = `<div class="profile-summary-row"><span>Name</span><strong>${escapeHtml(user.name || "")}</strong></div>`;
+    summaryEl.hidden = false;
+    return;
+  }
+  try {
+    const response = await fetch(`${API_URL}/auth/me?userId=${encodeURIComponent(user.id)}`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Server error: ${response.status}`);
+    const profile = data.profile || {};
+    const rows = [
+      ["Name", data.user?.name || user.name || ""],
+      ["Email", data.user?.email || user.email || ""],
+    ];
+    if (profile.phone) rows.push(["Phone", profile.phone]);
+    const address = [profile.address, profile.city, profile.district, profile.state, profile.pin, profile.country]
+      .filter(Boolean)
+      .join(", ");
+    if (address) rows.push(["Address", address]);
+    if (data.user?.created_at) {
+      rows.push([
+        "Member since",
+        new Date(data.user.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+      ]);
+    }
+    summaryEl.innerHTML = rows
+      .map(([label, value]) => `<div class="profile-summary-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`)
+      .join("");
+    summaryEl.hidden = false;
+  } catch (error) {
+    if (errorEl) errorEl.textContent = error.message;
+    showToast(error.message, false);
+  }
+}
+
+
+async function submitDeleteConfirm(event) {
+  event.preventDefault();
+  const errorEl = document.querySelector("#delete-confirm-error");
+  const confirmBtn = document.querySelector("#delete-confirm-continue");
+  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+  if (!user?.email) {
+    if (errorEl) errorEl.textContent = "You must be signed in to delete your account";
+    return;
+  }
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = "<span>Deleting...</span>";
+  }
+  if (errorEl) errorEl.textContent = "";
+  try {
+    const response = await fetchWithTimeout(`${API_URL}/auth/me`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: user.email }),
+    }, 15000);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error || `Server error: ${response.status}`);
+    }
+    localStorage.removeItem(authStorageKey);
+    localStorage.removeItem(ordersStorageKey);
+    localStorage.removeItem(notificationsStorageKey);
+    localStorage.removeItem(addressesStorageKey);
+    localStorage.removeItem(wishlistStorageKey);
+    localStorage.removeItem("sriram-store-delivery-pincode");
+    closeDeleteConfirm();
+    closeProfile();
+    closeAccountDropdown();
+    setAuthenticated(null);
+    clearProfileAuthForms();
+    setProfileAuthMode("register");
+    showToast("Your account has been deleted. We're sorry to see you go.");
+  } catch (error) {
+    if (errorEl) errorEl.textContent = error.message;
+    showToast(error.message, false);
+  } finally {
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.innerHTML = "Delete Account";
+    }
+  }
+}
+
+async function showProfileSummary() {
+  const summary = document.querySelector("#profile-summary");
+  const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+  if (!summary) return;
+  if (!user?.id) {
+    showToast("Please sign in to view your profile", false);
+    return;
+  }
+  try {
+    const response = await fetch(`${API_URL}/auth/me?userId=${encodeURIComponent(user.id)}`);
+    const data = await response.json().catch(() => ({}));
+    const profile = data.profile || {};
+    const rows = [
+      ["Name", data.user?.name || user.name || ""],
+      ["Email", data.user?.email || user.email || ""],
+    ];
+    if (profile.phone) rows.push(["Phone", profile.phone]);
+    const address = [profile.address, profile.city, profile.district, profile.state, profile.pin, profile.country]
+      .filter(Boolean)
+      .join(", ");
+    if (address) rows.push(["Address", address]);
+    if (data.user?.created_at) {
+      rows.push([
+        "Member since",
+        new Date(data.user.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+      ]);
+    }
+    summary.innerHTML = rows
+      .map(([label, value]) => `<div class="profile-summary-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`)
+      .join("");
+    summary.hidden = false;
+  } catch {
+    summary.hidden = true;
+  }
+}
+
+function initProfileMenu() {
+  const profileMenuItem = document.querySelector("#profile-menu-profile");
+  const deleteMenuItem = document.querySelector("#profile-menu-delete");
+  if (profileMenuItem) {
+    profileMenuItem.addEventListener("click", () => {
+      const summary = document.querySelector("#profile-summary");
+      if (summary && !summary.hidden) {
+        summary.hidden = true;
+        return;
+      }
+      showProfileSummary();
+    });
+  }
+  if (deleteMenuItem) {
+    deleteMenuItem.addEventListener("click", () => {
+      closeAccountDropdown();
+      openDeleteConfirm();
+    });
+  }
+    document.querySelectorAll("[data-close-delete-confirm]").forEach((element) => {
+      element.addEventListener("click", closeDeleteConfirm);
+    });
+    document.querySelectorAll("[data-close-account-info]").forEach((element) => {
+      element.addEventListener("click", closeAccountInfo);
+    });
+    const continueBtn = document.querySelector("#delete-confirm-continue");
+    if (continueBtn) continueBtn.addEventListener("click", submitDeleteConfirm);
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initProfileMenu);
+} else {
+  initProfileMenu();
 }
 
 function setProfileAuthMode(mode) {
@@ -706,10 +922,45 @@ function setProfileAuthMode(mode) {
   profileLoginTab.classList.toggle("is-active", loginMode);
   profileRegisterTab.classList.toggle("is-active", !loginMode);
   profileLoginTab.setAttribute("aria-selected", loginMode);
-  profileRegisterTab.setAttribute("aria-selected", !loginMode);
-  document.querySelector("#profile-title").textContent = loginMode ? "Welcome back" : "Create your account";
-  document.querySelector("#profile-subtitle").textContent = loginMode ? "Sign in to your account." : "Create a new account.";
-  profileError.textContent = "";
+   profileRegisterTab.setAttribute("aria-selected", !loginMode);
+   document.querySelector("#profile-title").textContent = loginMode ? "Welcome back" : "Create your account";
+   document.querySelector("#profile-subtitle").textContent = loginMode ? "Sign in to your account." : "Create a new account.";
+   profileError.textContent = "";
+}
+
+function clearProfileAuthForms() {
+   const inputIds = [
+      "profile-login-email", "profile-login-password",
+      "profile-register-name", "profile-register-email", "profile-register-password",
+      "profile-forgot-email", "profile-forgot-otp", "profile-forgot-new-password"
+   ];
+   inputIds.forEach((id) => {
+      const input = document.querySelector(`#${id}`);
+      if (input) {
+         input.value = "";
+         input.hidden = false;
+      }
+   });
+   document.querySelectorAll(".input-wrap").forEach((wrap) => {
+      const toggle = wrap.querySelector(".password-toggle");
+      if (toggle) toggle.textContent = "Show";
+      wrap.style.removeProperty("display");
+   });
+   const forgotOtpLabel = document.querySelector("#profile-forgot-otp-label");
+   if (forgotOtpLabel) forgotOtpLabel.hidden = true;
+   const forgotOtpWrap = document.querySelector("#profile-forgot-otp-wrap");
+   if (forgotOtpWrap) forgotOtpWrap.hidden = true;
+   const forgotPasswordLabel = document.querySelector("#profile-forgot-password-label");
+   if (forgotPasswordLabel) forgotPasswordLabel.hidden = true;
+   const forgotPasswordWrap = document.querySelector("#profile-forgot-password-wrap");
+   if (forgotPasswordWrap) forgotPasswordWrap.hidden = true;
+   const forgotStepNote = document.querySelector("#profile-forgot-step-note");
+   if (forgotStepNote) forgotStepNote.textContent = "Enter your email and we will send you a 6-digit OTP.";
+   const loginPasswordLabel = document.querySelector("#profile-login-password-label");
+   if (loginPasswordLabel) loginPasswordLabel.textContent = "Password";
+   const loginPasswordWrap = document.querySelector("#profile-login-password-wrap");
+   if (loginPasswordWrap) loginPasswordWrap.style.removeProperty("display");
+   profileError.textContent = "";
 }
 
 async function submitProfileAuth(form, endpoint, payload) {
@@ -892,7 +1143,7 @@ function renderProducts() {
       <div class="product-rating">${renderStars(product.rating || 4)} <small>(${product.reviews || 0})</small></div>
       ${deliveryHtml}
       ${notDeliverableHtml}
-      <button class="share-button" type="button" data-share-url="${shareUrl}" data-share-title="${product.name}" aria-label="Share ${product.name}">&#128257;</button>
+      <button class="share-button" type="button" data-share-url="${shareUrl}" data-share-title="${product.name}" data-share-image="${imageFor(product)}" aria-label="Share ${product.name}">&#128228;</button>
       <button class="wishlist-button ${wishlist.includes(product.id) ? "is-saved" : ""}" type="button" data-wishlist="${product.id}" aria-label="${wishlist.includes(product.id) ? "Remove from" : "Add to"} wishlist">&#9825;</button>
       <div class="add-area" data-product="${product.id}">${renderAddControl(product)}</div>
     </article>`;
@@ -926,8 +1177,15 @@ async function openDetails(id) {
   document.querySelector("#details-price").innerHTML = discountFor(product) ? `${formatPrice(finalPrice(product))} <del>${formatPrice(product.price)}</del>` : formatPrice(product.price);
   document.querySelector("#details-description").textContent = product.description || `Fresh ${product.name}, carefully selected and delivered in its best condition.`;
   document.querySelector("#details-unit").textContent = discountFor(product) ? `${discountFor(product)}% off · ${productUnit(product)}` : productUnit(product);
-  document.querySelector("#details-quantity").textContent = "1";
-  const productId = Number(detailsModal.dataset.productId);
+   document.querySelector("#details-quantity").textContent = "1";
+   const shareUrl = `${window.location.origin}${window.location.pathname}?product=${product.id}`;
+   const detailsShareBtn = document.querySelector("#details-share-btn");
+   if (detailsShareBtn) {
+     detailsShareBtn.dataset.shareUrl = shareUrl;
+     detailsShareBtn.dataset.shareTitle = product.name;
+     detailsShareBtn.dataset.shareImage = image;
+   }
+   const productId = Number(detailsModal.dataset.productId);
   await loadProductReviews(productId);
   const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
   if (user?.id) {
@@ -1555,6 +1813,33 @@ function startCouponRefresh() {
   }, 15000);
 }
 
+async function loadAvailableCoupons() {
+  const containers = [document.querySelector("#available-coupons"), document.querySelector("#bag-available-coupons")];
+  try {
+    const [couponsRes, offersRes] = await Promise.all([
+      fetch(`${API_URL}/coupons`).then((r) => r.json().catch(() => [])).catch(() => []),
+      Promise.resolve(festivalOffers)
+    ]);
+    const coupons = Array.isArray(couponsRes) ? couponsRes : [];
+    const offerCodes = (Array.isArray(offersRes) ? offersRes : [])
+      .filter((o) => o.coupon_code)
+      .map((o) => ({ code: o.coupon_code, discount_percent: Number(o.discount_percent), min_order_amount: Number(o.min_order_amount || 0), fromOffer: true }));
+    const subtotal = cart.reduce((sum, item) => sum + finalPrice(productById(item.id)) * item.quantity, 0);
+    const availableCoupons = [...coupons, ...offerCodes];
+    const html = availableCoupons.length
+      ? availableCoupons.map((c) => {
+          const minimum = Number(c.min_order_amount || 0);
+          const eligible = subtotal >= minimum;
+          const minimumLabel = minimum > 0 ? ` · Min order ${formatPrice(minimum)}` : "";
+          return `<button class="coupon-chip${eligible ? "" : " is-ineligible"}" type="button" data-coupon-chip="${escapeHtml(c.code)}" ${eligible ? "" : `title="Add ${formatPrice(minimum - subtotal)} more to use this coupon"`}>${escapeHtml(c.code)} · ${Number(c.discount_percent)}% off${minimumLabel}</button>`;
+        }).join("")
+      : '<span class="no-coupons">No active coupons available</span>';
+    containers.forEach((container) => { if (container) container.innerHTML = html; });
+  } catch (error) {
+    containers.forEach((container) => { if (container) container.innerHTML = ""; });
+  }
+}
+
 async function loadOffers() {
   try {
     const response = await fetch(`${API_URL}/offers`);
@@ -1656,31 +1941,37 @@ function syncActiveOffer() {
   };
 }
 
-productGrid.addEventListener("click", (event) => {
-  const wishlistButton = event.target.closest("[data-wishlist]");
-  if (wishlistButton) return toggleWishlist(Number(wishlistButton.dataset.wishlist));
-  const subtract = event.target.closest("[data-subtract]");
-  if (subtract) return decreaseQty(Number(subtract.dataset.subtract));
-  const addOne = event.target.closest("[data-addone]");
-  if (addOne) return addToCart(Number(addOne.dataset.addone));
-  const button = event.target.closest("[data-add]");
-  if (button) {
-    addToCart(Number(button.dataset.add));
-    return;
-  }
-  if (event.target.closest(".add-area")) return;
-  const card = event.target.closest("[data-detail]");
-  if (card) openDetails(Number(card.dataset.detail));
-});
-categoryFilter.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-category]");
-  if (!button) return;
-  const isLink = button.tagName === "A";
-  selectedCategory = button.dataset.category || "";
-  renderCategoryFilter();
-  renderProducts();
-  if (isLink) return;
-});
+if (productGrid) {
+  productGrid.addEventListener("click", (event) => {
+    const wishlistButton = event.target.closest("[data-wishlist]");
+    if (wishlistButton) return toggleWishlist(Number(wishlistButton.dataset.wishlist));
+    const subtract = event.target.closest("[data-subtract]");
+    if (subtract) return decreaseQty(Number(subtract.dataset.subtract));
+    const addOne = event.target.closest("[data-addone]");
+    if (addOne) return addToCart(Number(addOne.dataset.addone));
+    const button = event.target.closest("[data-add]");
+    if (button) {
+      addToCart(Number(button.dataset.add));
+      return;
+    }
+    if (event.target.closest(".add-area")) return;
+    const card = event.target.closest("[data-detail]");
+    if (card) openDetails(Number(card.dataset.detail));
+  });
+}
+
+if (categoryFilter) {
+  categoryFilter.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-category]");
+    if (!button) return;
+    const isLink = button.tagName === "A";
+    selectedCategory = button.dataset.category || "";
+    renderCategoryFilter();
+    renderProducts();
+    if (isLink) return;
+  });
+}
+
 const wishlistList = document.querySelector("#wishlist-list");
 if (wishlistList) {
   wishlistList.addEventListener("click", (event) => {
@@ -1780,7 +2071,8 @@ async function openOrderDetails(orderId) {
   orderDetailsModal.setAttribute("aria-hidden", "false");
 }
 
-ordersList.addEventListener("click", async (event) => {
+if (ordersList) {
+  ordersList.addEventListener("click", async (event) => {
   const cancelButton = event.target.closest("[data-cancel-order]");
   if (cancelButton) {
     const orderId = cancelButton.dataset.cancelOrder;
@@ -1844,7 +2136,10 @@ ordersList.addEventListener("click", async (event) => {
   const viewOrder = event.target.closest("[data-view-order]");
   if (viewOrder) openOrderDetails(viewOrder.dataset.viewOrder);
 });
-orderDetailsModal.addEventListener("click", (event) => {
+}
+
+if (orderDetailsModal) {
+  orderDetailsModal.addEventListener("click", (event) => {
     const starButton = event.target.closest(".star-rating-input button[data-rating]");
     if (starButton) {
       const productId = Number(starButton.closest(".star-rating-input").dataset.productId);
@@ -1865,6 +2160,7 @@ orderDetailsModal.addEventListener("click", (event) => {
       return;
     }
   });
+}
 orderDetailsModal.querySelectorAll("[data-close-order-details]").forEach((element) => element.addEventListener("click", () => closeModal(orderDetailsModal)));
 document.querySelector("#request-return").addEventListener("click", async () => {
   const orderId = orderDetailsModal.dataset.orderId;
@@ -1925,15 +2221,18 @@ document.querySelector("#print-invoice").addEventListener("click", async () => {
   }
 });
 
-productGrid.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter" && event.key !== " ") return;
-  const card = event.target.closest("[data-detail]");
-  if (card) {
-    event.preventDefault();
-    openDetails(Number(card.dataset.detail));
-  }
-});
-searchInput.addEventListener("input", renderProducts);
+if (productGrid) {
+  productGrid.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const card = event.target.closest("[data-detail]");
+    if (card) {
+      event.preventDefault();
+      openDetails(Number(card.dataset.detail));
+    }
+  });
+}
+
+if (searchInput) searchInput.addEventListener("input", renderProducts);
 
 const sortSelect = document.querySelector("#sort-select");
 if (sortSelect) sortSelect.addEventListener("change", renderProducts);
@@ -1959,43 +2258,180 @@ if (notificationClear) {
     clearNotifications();
   });
 }
-cartItems.addEventListener("click", (event) => {
-  const change = event.target.closest("[data-change]");
-  const remove = event.target.closest("[data-remove]");
-  if (change) {
-    const item = cart.find((entry) => entry.id === Number(change.dataset.change));
-    const product = productById(Number(change.dataset.change));
-    const amount = Number(change.dataset.amount);
-    if (item && product && amount > 0 && item.quantity >= Number(product.stock)) {
-      return showToast("You have reached the available stock", false);
+if (cartItems) {
+  cartItems.addEventListener("click", (event) => {
+    const change = event.target.closest("[data-change]");
+    const remove = event.target.closest("[data-remove]");
+    if (change) {
+      const item = cart.find((entry) => entry.id === Number(change.dataset.change));
+      const product = productById(Number(change.dataset.change));
+      const amount = Number(change.dataset.amount);
+      if (item && product && amount > 0 && item.quantity >= Number(product.stock)) {
+        return showToast("You have reached the available stock", false);
+      }
+      if (item) item.quantity += amount;
+      cart = cart.filter((entry) => entry.quantity > 0);
+      renderCart();
+      refreshAddButtons();
+      loadAvailableCoupons();
     }
-    if (item) item.quantity += amount;
-    cart = cart.filter((entry) => entry.quantity > 0);
-    renderCart();
-    refreshAddButtons();
-    loadAvailableCoupons();
-  }
-  if (remove) {
-    cart = cart.filter((entry) => entry.id !== Number(remove.dataset.remove));
-    renderCart();
-    refreshAddButtons();
-    loadAvailableCoupons();
-  }
-});
-document.querySelector("#cart-button").addEventListener("click", () => setCartOpen(true));
-document.querySelector("#account-button").addEventListener("click", () => {
+    if (remove) {
+      cart = cart.filter((entry) => entry.id !== Number(remove.dataset.remove));
+      renderCart();
+      refreshAddButtons();
+      loadAvailableCoupons();
+    }
+  });
+}
+
+document.querySelector("#cart-button")?.addEventListener("click", () => setCartOpen(true));
+document.querySelector("#account-button")?.addEventListener("click", (event) => {
+  event.stopPropagation();
   const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
-  if (user) {
-    openProfile();
+  if (!user?.id) return;
+  const dropdown = document.querySelector("#account-dropdown");
+  if (!dropdown) return;
+  const willOpen = !dropdown.classList.contains("open");
+  if (willOpen) {
+    openAccountDropdown();
+  } else {
+    closeAccountDropdown();
   }
 });
-document.querySelector("#logout-button").addEventListener("click", () => {
+document.addEventListener("click", () => closeAccountDropdown());
+document.querySelector("#account-menu-profile")?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  closeAccountDropdown();
+  openAccountInfo();
+});
+document.querySelector("#account-menu-delete")?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  closeAccountDropdown();
+  openDeleteConfirm();
+});
+document.querySelector("#account-menu-logout")?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  closeAccountDropdown();
   setAuthenticated(null);
   showToast("You have been signed out");
 });
-document.querySelector("#close-cart").addEventListener("click", () => setCartOpen(false));
-document.querySelector("#drawer-backdrop").addEventListener("click", () => setCartOpen(false));
-document.querySelector("#place-order").addEventListener("click", openCheckout);
+document.querySelector("#logout-button")?.addEventListener("click", () => {
+  setAuthenticated(null);
+  showToast("You have been signed out");
+});
+
+// AI Shopping Assistant
+const aiFab = document.querySelector("#ai-fab");
+const aiChatCard = document.querySelector("#ai-chat-card");
+const aiChatMessages = document.querySelector("#ai-chat-messages");
+const aiChatInput = document.querySelector("#ai-chat-input");
+const aiChatSend = document.querySelector("#ai-chat-send");
+const aiChatClose = document.querySelector("#ai-chat-close");
+
+function toggleAiChat() {
+  const isOpen = aiChatCard.classList.contains("open");
+  aiChatCard.classList.toggle("open", !isOpen);
+  aiChatCard.setAttribute("aria-hidden", String(isOpen));
+  aiFab.setAttribute("aria-expanded", String(!isOpen));
+  if (!isOpen) {
+    aiChatInput?.focus();
+    scrollAiMessagesToBottom();
+  }
+}
+
+function scrollAiMessagesToBottom() {
+  if (aiChatMessages) aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+}
+
+function addAiMessage(text, isUser) {
+  const wrapper = document.createElement("div");
+  wrapper.className = isUser ? "ai-message user" : "ai-message";
+  const bubble = document.createElement("div");
+  bubble.className = isUser ? "user-bubble" : "ai-bubble";
+  bubble.textContent = text;
+  wrapper.appendChild(bubble);
+  aiChatMessages.appendChild(wrapper);
+  scrollAiMessagesToBottom();
+}
+
+function addAiProducts(products) {
+  if (!products || products.length === 0) return;
+  const wrapper = document.createElement("div");
+  wrapper.className = "ai-message";
+  const container = document.createElement("div");
+  container.className = "ai-product-grid";
+  products.forEach((p) => {
+    const card = document.createElement("button");
+    card.className = "ai-product-card";
+    card.type = "button";
+    card.dataset.productId = p.id;
+    card.innerHTML = `
+      <img class="ai-product-img" src="${imageFor(p)}" alt="${p.name}" />
+      <div class="ai-product-name">${p.name}</div>
+      <div class="ai-product-price">
+        ${p.discount > 0 ? `<span class="del">₹${Number(p.price).toLocaleString("en-IN")}</span>` : ""}
+        ₹${Number(p.finalPrice).toLocaleString("en-IN")}
+      </div>
+    `;
+    card.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleAiChat();
+      openDetails(Number(p.id));
+    });
+    container.appendChild(card);
+  });
+  wrapper.appendChild(container);
+  aiChatMessages.appendChild(wrapper);
+  scrollAiMessagesToBottom();
+}
+
+async function sendAiMessage() {
+  const text = (aiChatInput?.value || "").trim();
+  if (!text) return;
+  addAiMessage(text, true);
+  aiChatInput.value = "";
+  aiChatSend.disabled = true;
+  try {
+    const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+    const response = await fetch(`${API_URL}/api/ai/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text, userId: user?.id || 0 }),
+    });
+     const data = await response.json().catch(() => ({ reply: "Sorry, I could not reach the server.", products: [] }));
+     if (!response.ok && !data.reply) {
+       addAiMessage("I'm temporarily unavailable. Please try again in a moment.", false);
+     } else {
+       addAiMessage(data.reply || "I'm not sure how to help with that.", false);
+       if (data.products && data.products.length > 0) addAiProducts(data.products);
+     }
+  } catch (err) {
+    addAiMessage("I'm having trouble right now. Please try again in a moment.", false);
+  } finally {
+    aiChatSend.disabled = false;
+    aiChatInput?.focus();
+  }
+}
+
+aiFab?.addEventListener("click", toggleAiChat);
+aiChatClose?.addEventListener("click", toggleAiChat);
+aiChatSend?.addEventListener("click", sendAiMessage);
+aiChatInput?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); sendAiMessage(); }
+});
+document.addEventListener("click", (e) => {
+  if (!aiFab?.contains(e.target) && !aiChatCard?.contains(e.target)) {
+    if (aiChatCard?.classList.contains("open")) {
+      aiChatCard.classList.remove("open");
+      aiChatCard.setAttribute("aria-hidden", "true");
+      aiFab.setAttribute("aria-expanded", "false");
+    }
+  }
+});
+document.querySelector("#close-cart")?.addEventListener("click", () => setCartOpen(false));
+document.querySelector("#drawer-backdrop")?.addEventListener("click", () => setCartOpen(false));
+document.querySelector("#place-order")?.addEventListener("click", openCheckout);
 async function applyCoupon(codeInput, status) {
   const code = codeInput.value.trim().toUpperCase();
   if (!code) {
@@ -2074,44 +2510,17 @@ function clearCoupon() {
   renderCart();
 }
 
-document.querySelector("#apply-coupon").addEventListener("click", () => applyCoupon(document.querySelector("#coupon-code"), document.querySelector("#coupon-status")));
-document.querySelector("#bag-apply-coupon").addEventListener("click", () => applyCoupon(document.querySelector("#bag-coupon-code"), document.querySelector("#bag-coupon-status")));
-document.querySelector("#remove-discount").addEventListener("click", clearCoupon);
+document.querySelector("#apply-coupon")?.addEventListener("click", () => applyCoupon(document.querySelector("#coupon-code"), document.querySelector("#coupon-status")));
+document.querySelector("#bag-apply-coupon")?.addEventListener("click", () => applyCoupon(document.querySelector("#bag-coupon-code"), document.querySelector("#bag-coupon-status")));
+document.querySelector("#remove-discount")?.addEventListener("click", clearCoupon);
 
-async function loadAvailableCoupons() {
-  const containers = [document.querySelector("#available-coupons"), document.querySelector("#bag-available-coupons")];
-  try {
-    const [couponsRes, offersRes] = await Promise.all([
-      fetch(`${API_URL}/coupons`).then((r) => r.json().catch(() => [])).catch(() => []),
-      Promise.resolve(festivalOffers)
-    ]);
-    const coupons = Array.isArray(couponsRes) ? couponsRes : [];
-    const offerCodes = (Array.isArray(offersRes) ? offersRes : [])
-      .filter((o) => o.coupon_code)
-      .map((o) => ({ code: o.coupon_code, discount_percent: Number(o.discount_percent), min_order_amount: Number(o.min_order_amount || 0), fromOffer: true }));
-    const subtotal = cart.reduce((sum, item) => sum + finalPrice(productById(item.id)) * item.quantity, 0);
-    const availableCoupons = [...coupons, ...offerCodes];
-    const html = availableCoupons.length
-      ? availableCoupons.map((c) => {
-          const minimum = Number(c.min_order_amount || 0);
-          const eligible = subtotal >= minimum;
-          const minimumLabel = minimum > 0 ? ` · Min order ${formatPrice(minimum)}` : "";
-          return `<button class="coupon-chip${eligible ? "" : " is-ineligible"}" type="button" data-coupon-chip="${escapeHtml(c.code)}" ${eligible ? "" : `title="Add ${formatPrice(minimum - subtotal)} more to use this coupon"`}>${escapeHtml(c.code)} · ${Number(c.discount_percent)}% off${minimumLabel}</button>`;
-        }).join("")
-      : '<span class="no-coupons">No active coupons available</span>';
-    containers.forEach((container) => { if (container) container.innerHTML = html; });
-  } catch (error) {
-    containers.forEach((container) => { if (container) container.innerHTML = ""; });
-  }
-}
-
-document.querySelector("#cart-button").addEventListener("click", () => {
+document.querySelector("#cart-button")?.addEventListener("click", () => {
   setCartOpen(true);
   syncCouponUI();
   loadAvailableCoupons();
 });
 
-document.querySelector("#place-order").addEventListener("click", () => {
+document.querySelector("#place-order")?.addEventListener("click", () => {
   loadAvailableCoupons();
 });
 
@@ -2151,12 +2560,12 @@ document.querySelector("#stock-alert-remove-btn")?.addEventListener("click", asy
   if (!productId) return;
   await removeStockAlert(productId);
 });
-checkoutModal.querySelectorAll("[data-close-checkout]").forEach((element) => element.addEventListener("click", () => closeModal(checkoutModal)));
-orderEditModal.querySelectorAll("[data-close-order-edit]").forEach((element) => element.addEventListener("click", () => closeModal(orderEditModal)));
-profileModal.querySelectorAll("[data-close-profile]").forEach((element) => element.addEventListener("click", () => closeProfile()));
-profileLoginTab.addEventListener("click", () => setProfileAuthMode("login"));
-profileRegisterTab.addEventListener("click", () => setProfileAuthMode("register"));
-  profileLoginForm.addEventListener("submit", (event) => {
+checkoutModal?.querySelectorAll("[data-close-checkout]").forEach((element) => element.addEventListener("click", () => closeModal(checkoutModal)));
+orderEditModal?.querySelectorAll("[data-close-order-edit]").forEach((element) => element.addEventListener("click", () => closeModal(orderEditModal)));
+profileModal?.querySelectorAll("[data-close-profile]").forEach((element) => element.addEventListener("click", () => closeProfile()));
+profileLoginTab?.addEventListener("click", () => setProfileAuthMode("login"));
+profileRegisterTab?.addEventListener("click", () => setProfileAuthMode("register"));
+profileLoginForm?.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!profileLoginForm.checkValidity()) return profileLoginForm.reportValidity();
   submitProfileAuth(profileLoginForm, "/auth/login", {
@@ -2164,7 +2573,7 @@ profileRegisterTab.addEventListener("click", () => setProfileAuthMode("register"
     password: document.querySelector("#profile-login-password").value,
   });
 });
-profileRegisterForm.addEventListener("submit", (event) => {
+profileRegisterForm?.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!profileRegisterForm.checkValidity()) return profileRegisterForm.reportValidity();
   submitProfileAuth(profileRegisterForm, "/auth/register", {
@@ -2173,31 +2582,31 @@ profileRegisterForm.addEventListener("submit", (event) => {
     password: document.querySelector("#profile-register-password").value,
   });
 });
-document.querySelector("#details-decrease").addEventListener("click", () => {
+document.querySelector("#details-decrease")?.addEventListener("click", () => {
   const quantity = Number(document.querySelector("#details-quantity").textContent);
   document.querySelector("#details-quantity").textContent = Math.max(0, quantity - 1);
 });
-document.querySelector("#details-increase").addEventListener("click", () => {
+document.querySelector("#details-increase")?.addEventListener("click", () => {
   const quantity = Number(document.querySelector("#details-quantity").textContent);
   const product = productById(Number(detailsModal.dataset.productId));
   document.querySelector("#details-quantity").textContent = Math.min(Number(product?.stock) || 1, quantity + 1);
 });
-document.querySelector("#details-add").addEventListener("click", () => {
+document.querySelector("#details-add")?.addEventListener("click", () => {
   const id = Number(detailsModal.dataset.productId);
   const quantity = Number(document.querySelector("#details-quantity").textContent);
   for (let count = 0; count < quantity; count += 1) addToCart(id);
   closeModal(detailsModal);
   openCheckout();
 });
-document.querySelector("#details-buy").addEventListener("click", () => {
+document.querySelector("#details-buy")?.addEventListener("click", () => {
   const id = Number(detailsModal.dataset.productId);
   const quantity = Number(document.querySelector("#details-quantity").textContent);
   for (let count = 0; count < quantity; count += 1) addToCart(id);
   closeModal(detailsModal);
   openCheckout();
 });
-document.querySelector("#login-tab").addEventListener("click", () => setAuthMode("login"));
-document.querySelector("#register-tab").addEventListener("click", () => setAuthMode("register"));
+document.querySelector("#login-tab")?.addEventListener("click", () => setAuthMode("login"));
+document.querySelector("#register-tab")?.addEventListener("click", () => setAuthMode("register"));
 
 async function lookupPincode(pincode) {
   const statusEl = document.querySelector("#pincode-status");
@@ -2534,7 +2943,7 @@ document.querySelector("#forgot-back-link")?.addEventListener("click", () => hid
 document.querySelector("#profile-forgot-back-link")?.addEventListener("click", () => hideForgotPasswordFlow("profile-"));
 document.querySelector("#forgot-password-link")?.addEventListener("click", () => showForgotPasswordFlow(""));
 document.querySelector("#profile-forgot-password-link")?.addEventListener("click", () => showForgotPasswordFlow("profile-"));
-registerForm.addEventListener("submit", (event) => {
+registerForm?.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!registerForm.checkValidity()) return registerForm.reportValidity();
   submitAuth(registerForm, "/auth/register", {
@@ -2577,11 +2986,11 @@ window.addEventListener("hashchange", setActiveNavLink);
     selectedCategory = urlCategory;
   }
 
-  renderCart();
-  renderWishlist();
+  try { renderCart(); } catch (e) { console.warn("renderCart failed:", e.message); }
+  try { renderWishlist(); } catch (e) { console.warn("renderWishlist failed:", e.message); }
   setAuthenticated(JSON.parse(localStorage.getItem(authStorageKey) || "null"));
 
-  initDeliveryChecker();
+  try { initDeliveryChecker(); } catch (e) { console.warn("initDeliveryChecker failed:", e.message); }
 
   const viewToggle = document.querySelector("#view-toggle");
   if (viewToggle) {
@@ -2606,9 +3015,14 @@ function initShareButtons() {
     if (!shareBtn) return;
     const url = shareBtn.dataset.shareUrl;
     const title = shareBtn.dataset.shareTitle;
+    const imageUrl = shareBtn.dataset.shareImage;
     if (navigator.share) {
-      navigator.share({ title, url }).catch(() => {});
+      navigator.share({ title, url, text: title }).catch(() => {});
     } else {
+      if (imageUrl) {
+        shareBtn.setAttribute("data-share-text", title);
+        shareBtn.setAttribute("data-share-url", url);
+      }
       navigator.clipboard.writeText(url).then(() => {
         showToast(`Copied link for ${title}`);
       }).catch(() => {
@@ -2965,16 +3379,36 @@ async function checkSpinStatus() {
   const spinButton = document.querySelector("#spin-button");
   const statusEl = document.querySelector("#spin-status");
   const spinsCountEl = document.querySelector("#spins-count");
-  if (!user?.id || !spinButton) return;
+  const spinFabBadge = document.querySelector("#spin-fab-badge");
+  const spinFab = document.querySelector("#spin-fab");
+  if (!user?.id) {
+    if (spinFabBadge) spinFabBadge.remove();
+    return;
+  }
   try {
     const response = await fetch(`${API_URL}/api/spin/attempts?userId=${user.id}`);
     const data = await response.json().catch(() => ({}));
     if (response.ok) {
       const total = data.total || 0;
       if (spinsCountEl) spinsCountEl.textContent = `Spins: ${data.daily?.available || 0} daily + ${data.purchase?.available || 0} earned = ${total} total`;
+      // Update FAB badge
+      if (spinFab && spinFabBadge !== null) {
+        if (total > 0) {
+          let badge = spinFab.querySelector("#spin-fab-badge");
+          if (!badge) {
+            badge = document.createElement("span");
+            badge.id = "spin-fab-badge";
+            badge.className = "spin-fab-badge";
+            spinFab.appendChild(badge);
+          }
+          badge.textContent = String(total);
+        } else {
+          const badge = spinFab.querySelector("#spin-fab-badge");
+          if (badge) badge.remove();
+        }
+      }
       if (total <= 0) {
-        spinButton.disabled = true;
-        spinButton.innerHTML = "<span>🔒</span> No Spins Available";
+        if (spinButton) { spinButton.disabled = true; spinButton.innerHTML = "<span>🔒</span> No Spins Available"; }
         if (statusEl) { statusEl.textContent = "Daily spin resets at midnight. Purchase ₹500+ for more spins!"; statusEl.className = "spin-status"; }
       } else {
         resetSpinButton();
@@ -3016,6 +3450,23 @@ async function submitSpin() {
     const spinsCountEl = document.querySelector("#spins-count");
     if (spinsCountEl && data.remaining) {
       spinsCountEl.textContent = `Spins: ${data.remaining.daily} daily + ${data.remaining.purchase} earned = ${data.remaining.total} total`;
+    }
+    // Update FAB badge
+    const spinFab = document.querySelector("#spin-fab");
+    if (spinFab && data.remaining) {
+      const remaining = data.remaining.total || 0;
+      let badge = spinFab.querySelector("#spin-fab-badge");
+      if (remaining > 0) {
+        if (!badge) {
+          badge = document.createElement("span");
+          badge.id = "spin-fab-badge";
+          badge.className = "spin-fab-badge";
+          spinFab.appendChild(badge);
+        }
+        badge.textContent = String(remaining);
+      } else if (badge) {
+        badge.remove();
+      }
     }
   } catch (error) {
     showToast("Could not connect to server", false);
@@ -3132,6 +3583,14 @@ function initApp() {
   
   // Check for login parameter (from referral link)
   const urlParams = new URLSearchParams(window.location.search);
+   // Account deletion confirmation (redirected from delete-account.html)
+   if (urlParams.get("deleted") === "1") {
+     showToast("Your account has been deleted. We're sorry to see you go.");
+     setAuthenticated(null);
+     clearProfileAuthForms();
+     setProfileAuthMode("register");
+     window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+   }
   if (urlParams.get("login") === "true") {
     openProfile();
     // Clean URL
@@ -3525,5 +3984,58 @@ function splitAddress(address, maxChars) {
   if (currentLine) lines.push(currentLine.trim());
   return lines.length ? lines : ["—"];
 }
+
+// Delete account page logic (only runs on delete-account.html)
+(function initDeleteAccountPage() {
+  if (!document.querySelector("#delete-account-confirm")) return;
+
+  let isDeleting = false;
+
+  const confirmBtn = document.querySelector("#delete-account-confirm");
+  const errorEl = document.querySelector("#delete-account-error");
+  if (confirmBtn) {
+    confirmBtn.addEventListener("click", async () => {
+      if (isDeleting) return;
+      const user = JSON.parse(localStorage.getItem(authStorageKey) || "null");
+      if (!user?.email) {
+        if (errorEl) errorEl.textContent = "You must be signed in to delete your account";
+        return;
+      }
+      isDeleting = true;
+      if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = "<span>Deleting...</span>";
+      }
+      if (errorEl) errorEl.textContent = "";
+      try {
+        const response = await fetchWithTimeout(`${API_URL}/auth/me`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: user.email }),
+        }, 15000);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || `Server error: ${response.status}`);
+        }
+        localStorage.removeItem(authStorageKey);
+        localStorage.removeItem(ordersStorageKey);
+        localStorage.removeItem(notificationsStorageKey);
+        localStorage.removeItem(addressesStorageKey);
+        localStorage.removeItem(wishlistStorageKey);
+        localStorage.removeItem("sriram-store-delivery-pincode");
+        window.location.href = "index.html?deleted=1";
+      } catch (error) {
+        if (errorEl) errorEl.textContent = error.message;
+        showToast(error.message, false);
+      } finally {
+        isDeleting = false;
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.innerHTML = "Delete Account <span>&rarr;</span>";
+        }
+      }
+    });
+  }
+})();
 
 

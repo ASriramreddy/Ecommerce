@@ -45,12 +45,22 @@
         <button class="cart-button" id="notification-button" type="button" aria-label="Notifications" hidden>
           <span class="bell-wrap">&#128276;</span><span class="bell-badge" id="notification-count">0</span>
         </button>
-        <button class="cart-button" id="account-button" type="button">
-          Account
-        </button>
-        <button class="cart-button" id="logout-button" type="button" hidden>
-          Logout
-        </button>
+        <div class="account-menu-wrap">
+          <button class="cart-button" id="account-button" type="button" aria-haspopup="true" aria-expanded="false">
+            Account
+          </button>
+           <div class="account-dropdown" id="account-dropdown" aria-label="Account menu">
+             <button class="account-dropdown-item" type="button" id="account-menu-profile">
+               <span class="account-dropdown-icon">&#128100;</span> My Profile
+             </button>
+            <button class="account-dropdown-item danger" type="button" id="account-menu-delete">
+              <span class="account-dropdown-icon">&#128712;</span> Delete Account
+            </button>
+            <button class="account-dropdown-item" type="button" id="account-menu-logout">
+              <span class="account-dropdown-icon">&#8617;</span> Logout
+            </button>
+          </div>
+        </div>
         <button
           class="cart-button"
           id="cart-button"
@@ -305,7 +315,7 @@
                 type="button"
                 aria-label="Decrease quantity"
               >
-                &minus;</button
+              &minus;</button
               ><strong id="details-quantity">1</strong
               ><button
                 id="details-increase"
@@ -314,7 +324,9 @@
               >
                 +
               </button>
-            </div>
+          </div>
+          <div class="details-share-row" id="details-share-row">
+            <button class="share-button details-share-btn" id="details-share-btn" type="button" aria-label="Share this product">&#128228;</button>
             <button class="secondary-button" id="details-buy" type="button">Buy now</button>
             <button class="primary-button" id="details-add" type="button">
               Add to bag <span>&rarr;</span>
@@ -873,9 +885,68 @@
           </button>
         </form>
         <p class="auth-error" id="profile-error" role="alert" aria-live="polite"></p>
+        <div class="profile-summary" id="profile-summary" hidden></div>
+        <div class="profile-footer-actions" id="profile-delete-action">
+          <button class="secondary-button" type="button" id="profile-menu-profile">
+            &#128100; My Profile
+          </button>
+          <button class="secondary-button danger-button" type="button" id="profile-menu-delete">
+            &#128711; Delete Account
+          </button>
+        </div>
       </div>
     </div>
-    <div class="spin-modal" id="spin-modal" aria-hidden="true">
+    <div class="confirm-modal" id="delete-confirm-modal" aria-hidden="true">
+       <div class="auth-overlay" data-close-delete-confirm></div>
+       <div class="auth-card delete-account-card">
+         <button
+           class="close-button"
+           data-close-delete-confirm
+           type="button"
+           aria-label="Close"
+         >
+           &times;
+         </button>
+         <div class="form-heading">
+           <p class="eyebrow">Danger zone</p>
+           <h2>Delete account?</h2>
+         </div>
+         <p class="form-note" id="delete-confirm-warning">
+           Deleting your account will <strong>permanently remove your personal data</strong>,
+           including your profile, saved addresses, wishlist, reviews, and stock alerts.
+           Your order and invoice history is kept as required by law. This action cannot be undone.
+         </p>
+         <div class="delete-account-actions">
+           <button class="secondary-button" type="button" data-close-delete-confirm>
+             Cancel
+           </button>
+           <button class="primary-button danger-button" type="button" id="delete-confirm-continue">
+             Delete Account
+           </button>
+         </div>
+         <p class="auth-error" id="delete-confirm-error" role="alert" aria-live="polite"></p>
+        </div>
+      </div>
+     <div class="confirm-modal" id="account-info-modal" aria-hidden="true">
+       <div class="auth-overlay" data-close-account-info></div>
+       <div class="auth-card">
+         <button
+           class="close-button"
+           data-close-account-info
+           type="button"
+           aria-label="Close"
+         >
+           &times;
+         </button>
+         <div class="form-heading">
+           <p class="eyebrow">Your account</p>
+           <h2 id="account-info-title">Account</h2>
+         </div>
+         <div id="account-info-summary" class="profile-summary" hidden></div>
+         <div class="auth-error" id="account-info-error" role="alert" aria-live="polite"></div>
+       </div>
+     </div>
+     <div class="spin-modal" id="spin-modal" aria-hidden="true">
       <div class="spin-modal-overlay" data-close-spin></div>
       <article class="spin-result-card" role="dialog" aria-modal="true" aria-labelledby="spin-result-title">
         <button class="close-button" data-close-spin type="button" aria-label="Close">&times;</button>
@@ -909,6 +980,30 @@
         </button>
         <small class="spin-status" id="spin-status" role="status"></small>
       </article>
+    </div>
+    <div id="ai-assistant">
+      <button class="ai-fab" id="ai-fab" type="button" aria-label="AI Shopping Assistant" aria-expanded="false">
+        <span class="ai-fab-icon" role="img" aria-hidden="true">&#9733;</span>
+      </button>
+      <div class="ai-chat-card" id="ai-chat-card" aria-hidden="true">
+        <div class="ai-chat-header">
+          <span class="ai-chat-avatar" role="img" aria-hidden="true">&#9418;</span>
+          <div class="ai-chat-title">
+            <span class="ai-chat-name">AI Shopping Assistant</span>
+            <span class="ai-chat-status">Online</span>
+          </div>
+          <button class="ai-chat-close" id="ai-chat-close" type="button" aria-label="Close assistant" role="button">&#215;</button>
+        </div>
+        <div class="ai-chat-messages" id="ai-chat-messages">
+          <div class="ai-message">
+            <div class="ai-bubble">Hi! I'm your AI shopping assistant. Ask me to find products, track orders, or answer questions about delivery and returns.</div>
+          </div>
+        </div>
+        <div class="ai-chat-input-wrap">
+          <input class="ai-chat-input" id="ai-chat-input" type="text" placeholder="Ask about products, orders, delivery..." autocomplete="off" />
+          <button class="ai-chat-send" id="ai-chat-send" type="button" aria-label="Send message">&#8594;</button>
+        </div>
+      </div>
     </div>
     <script src="script.js"></script>
 

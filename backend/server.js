@@ -1558,6 +1558,121 @@ app.patch("/auth/me", async (req, res) => {
     }
 });
 
+// Delete account - requires email. Password or email OTP verification is
+// optional but recommended. When the user is already authenticated (the
+// common case for the in-page modal), email alone is sufficient because the
+// frontend only sends the logged-in user's own email. Personal data is
+// anonymized/removed while order and invoice records are retained.
+app.delete("/auth/me", async (req, res) => {
+    const body = req.body || {};
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "");
+    const otp = String(body.otp || "").trim();
+
+    if (!email || !email.includes("@")) {
+        return res.status(400).json({ error: "Valid email is required" });
+    }
+    const hasPassword = password.length > 0;
+    const hasOtp = /^[0-9]{6}$/.test(otp);
+
+    // The admin email is reserved and has no user account to delete.
+    const adminEmail = String(process.env.ADMIN_EMAIL || "admin@sriramstore.local").toLowerCase();
+    if (email === adminEmail) {
+        return res.status(403).json({ error: "Administrator accounts cannot be deleted" });
+    }
+
+    try {
+        await Promise.all([
+            databaseReady, profilesReady, ordersReady, reviewsReady,
+            notificationsReady, recentlyViewedReady, dailyRewardsReady,
+            userSpinAttemptsReady, passwordResetReady, loginOtpReady,
+            stockAlertsReady, referralsReady
+        ]);
+
+        const connection = await db.promise().getConnection();
+        try {
+            await connection.beginTransaction();
+
+            // Identify the account by its unique email. Any user id sent by
+            // the client is ignored entirely. FOR UPDATE locks the row so
+            // concurrent deletion attempts cannot both succeed.
+            const [userRows] = await connection.query(
+                "SELECT id, name, email, password_hash FROM users WHERE email = ? FOR UPDATE",
+                [email]
+            );
+            if (!userRows.length) {
+                await connection.rollback();
+                return res.status(404).json({ error: "No account found with this email" });
+            }
+            const user = userRows[0];
+            const userId = user.id;
+
+            if (hasPassword) {
+                if (!verifyPassword(password, user.password_hash)) {
+                    await connection.rollback();
+                    return res.status(401).json({ error: "Incorrect password" });
+                }
+            } else if (hasOtp) {
+                // The OTP record itself supplies the user id, so the client
+                // cannot point the deletion at someone else's account.
+                const [otpRows] = await connection.query(
+                    "SELECT id FROM login_otps WHERE email = ? AND otp = ? AND expires_at > NOW() AND used = FALSE ORDER BY created_at DESC LIMIT 1 FOR UPDATE",
+                    [email, otp]
+                );
+                if (!otpRows.length) {
+                    await connection.rollback();
+                    return res.status(400).json({ error: "Invalid or expired OTP" });
+                }
+            }
+
+            // Retain legally required order/invoice records: orders keep their
+            // id, items, totals, status and dates; only the personal delivery
+            // address is stripped.
+            await connection.query(
+                "UPDATE orders SET address = '[deleted]' WHERE user_id = ?",
+                [userId]
+            );
+
+            // Anonymize the account in place instead of deleting the row: the
+            // original email is freed for re-registration, the password hash is
+            // replaced with an unusable one so the account can never be signed
+            // into again, and orders keep their user_id reference so invoice
+            // and legal history stays intact.
+            const deletedEmail = `deleted-u${userId}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}@sriram-store.deleted`;
+            await connection.query(
+                "UPDATE users SET name = ?, email = ?, password_hash = ?, email_verified = FALSE, verification_token = NULL, verification_token_expires = NULL WHERE id = ?",
+                ["Deleted User", deletedEmail, hashPassword(crypto.randomBytes(32).toString("hex")), userId]
+            );
+
+            // Remove personal data that is not legally required.
+            await connection.query("DELETE FROM user_profiles WHERE user_id = ?", [userId]);
+            await connection.query("DELETE FROM reviews WHERE user_id = ?", [userId]);
+            await connection.query("DELETE FROM user_notifications WHERE user_id = ?", [userId]);
+            await connection.query("DELETE FROM user_recently_viewed WHERE user_id = ?", [userId]);
+            await connection.query("DELETE FROM daily_rewards WHERE user_id = ?", [userId]);
+            await connection.query("DELETE FROM user_spin_attempts WHERE user_id = ?", [userId]);
+            await connection.query("DELETE FROM password_resets WHERE user_id = ?", [userId]);
+            await connection.query("DELETE FROM login_otps WHERE user_id = ?", [userId]);
+            await connection.query("DELETE FROM stock_alerts WHERE user_id = ?", [userId]);
+            await connection.query("DELETE FROM referrals WHERE referrer_id = ? OR referee_id = ?", [userId, userId]);
+            await connection.query("DELETE FROM user_referral_codes WHERE user_id = ?", [userId]);
+
+            await connection.commit();
+            console.log(`[DeleteAccount] Account ${userId} anonymized for ${email}`);
+            res.json({ success: true, message: "Your account has been deleted. Order and invoice history has been retained as required by law." });
+        } catch (error) {
+            await connection.rollback();
+            console.error("[DeleteAccount] Transaction failed:", error.message);
+            res.status(503).json({ error: "Could not delete account" });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error("[DeleteAccount] Error:", error.message);
+        res.status(503).json({ error: "Could not delete account" });
+    }
+});
+
 function requireAdmin(req, res, next) {
     const token = req.headers.authorization?.replace("Bearer ", "");
     if (!token) return res.status(401).json({ error: "Admin authentication required" });
@@ -3546,6 +3661,152 @@ app.post("/api/daily-reward/spin", async (req, res) => {
         res.status(503).json({ error: "Spin failed. Please try again." });
     }
 });
+
+// =============================================================================
+// AI Shopping Assistant
+// =============================================================================
+const AI_FAQS = [
+    { question: "How do I track my order?", answer: "You can track your order from the \"My orders\" section on the home page. We also send updates via email and SMS." },
+    { question: "What is your delivery timeline?", answer: "We typically deliver within 24-48 hours depending on your location. You will see the estimated delivery date at checkout." },
+    { question: "How can I cancel or return an order?", answer: "You can request a cancellation or return from the order details page. Orders can be cancelled before they are shipped." },
+    { question: "Do you offer cash on delivery?", answer: "Yes, cash on delivery is available for most locations. You can select this option at checkout." },
+    { question: "How do I apply a coupon code?", answer: "Enter your coupon code in the checkout page under \"Discount code\" and click Apply. The discount will be reflected in your total." },
+    { question: "What is the refund policy?", answer: "We offer a 30-day refund policy. Contact us via the support page with your order number and we will process your refund." },
+    { question: "Can I change my delivery address?", answer: "You can edit your address in your profile or contact support before the order ships. Once shipped, address changes are not possible." },
+];
+
+function findFaqMatch(message) {
+    const msg = (message || "").toLowerCase().trim();
+    if (!msg) return null;
+    const msgWords = new Set(msg.split(/\W+/).filter(Boolean));
+    const keywords = {
+        "track": ["track", "status"],
+        "delivery": ["delivery"],
+        "cancel return": ["cancel", "return", "refund"],
+        "cash on delivery": ["cash", "cod"],
+        "coupon": ["coupon", "discount", "promo", "voucher"],
+        "refund": ["refund", "money"],
+        "address": ["address"],
+    };
+    for (const faq of AI_FAQS) {
+        const qWords = faq.question.toLowerCase().split(/\W+/).filter(Boolean);
+        if (qWords.some(w => w.length > 2 && msgWords.has(w))) return faq;
+    }
+    for (const [key, kws] of Object.entries(keywords)) {
+        if (kws.some(kw => msgWords.has(kw))) {
+            const match = AI_FAQS.find(f => f.question.toLowerCase().includes(key.split(" ")[0]));
+            if (match) return match;
+        }
+    }
+    return null;
+}
+
+app.get("/api/ai/faqs", async (req, res) => {
+    res.json(AI_FAQS);
+});
+
+app.post("/api/ai/chat", async (req, res) => {
+    const body = req.body || {};
+    const message = String(body.message || "").trim();
+
+    if (!message) {
+        return res.status(400).json({ error: "Message is required" });
+    }
+
+    try {
+        await databaseReady;
+        await inventoryReady;
+
+        const msg = message.toLowerCase();
+        let reply = "";
+        let products = [];
+
+        // Fetch distinct categories from DB and build keyword mapping
+        const [catRows] = await db.promise().query("SELECT DISTINCT category FROM products WHERE stock > 0 ORDER BY category");
+        const categories = catRows.map(r => r.category);
+        const categoryAliases = {
+            "apple": "fruit", "banana": "fruit", "orange": "fruit", "mango": "fruit",
+            "milk": "dairy", "egg": "dairy", "yogurt": "dairy", "cheese": "dairy",
+            "bread": "bakery", "cake": "bakery", "bun": "bakery", "pastry": "bakery",
+            "tomato": "veg", "carrot": "veg", "onion": "veg", "potato": "veg", "pepper": "veg",
+        };
+
+        // Match category by checking aliases first, then direct match
+        let categoryMatch = null;
+        for (const alias of Object.keys(categoryAliases)) {
+            if (msg.includes(alias)) {
+                const targetCat = categoryAliases[alias];
+                if (categories.includes(targetCat)) {
+                    categoryMatch = targetCat;
+                    break;
+                }
+            }
+        }
+        if (!categoryMatch) {
+            categoryMatch = categories.find(c => msg.includes(c.toLowerCase()));
+        }
+
+        let productQuery = "";
+        const queryParams = [];
+
+        if (categoryMatch) {
+            productQuery = "SELECT id, name, price, category, image, description, stock, discount FROM products WHERE category = ? AND stock > 0 ORDER BY name ASC, id DESC LIMIT 5";
+            queryParams.push(categoryMatch);
+        } else {
+            // Search by keyword in product name or description
+            const searchTerms = message.split(/\s+/).filter(w => w.length > 2);
+            if (searchTerms.length > 0) {
+                const likeClauses = searchTerms.map(() => "name LIKE ? OR description LIKE ?").join(" OR ");
+                productQuery = `SELECT id, name, price, category, image, description, stock, discount FROM products WHERE (${likeClauses}) AND stock > 0 ORDER BY name ASC, id DESC LIMIT 5`;
+                searchTerms.forEach(term => {
+                    queryParams.push(`%${term}%`);
+                    queryParams.push(`%${term}%`);
+                });
+            }
+        }
+
+        if (productQuery) {
+            const [rows] = await db.promise().query(productQuery, queryParams);
+            products = rows.map(p => ({
+                id: p.id,
+                name: p.name,
+                price: Number(p.price),
+                category: p.category,
+                image: p.image,
+                discount: Number(p.discount || 0),
+                finalPrice: Number(p.price) * (1 - Number(p.discount || 0) / 100),
+            }));
+        }
+
+        // Build reply
+        const faq = findFaqMatch(message);
+        if (faq && products.length === 0) {
+            reply = faq.answer;
+        } else if (products.length > 0) {
+            reply = buildProductReply(message, products, categoryMatch);
+        } else if (msg.includes("hello") || msg.includes("hi ") || msg.includes("hey") || msg.includes("help") || msg.includes("support")) {
+            reply = "Hello! I'm your AI shopping assistant. I can help you find products, answer questions about orders, delivery, returns, and more. Just ask me anything!";
+        } else {
+            reply = "I can help you find products like fruits, vegetables, dairy, or bakery items, and answer questions about orders, delivery, and returns. What would you like to know?";
+        }
+
+        res.json({ reply, products });
+    } catch (error) {
+        console.error("AI chat failed:", error.message);
+        res.status(503).json({ error: "AI assistant is temporarily unavailable. Please try again.", reply: "I'm having trouble connecting right now. Please try again in a moment.", products: [] });
+    }
+});
+
+function buildProductReply(message, products, category) {
+    if (products.length === 0) {
+        return "I'm sorry, but I don't have any products matching your search right now. Would you like to see our full catalog?";
+    }
+    if (category) {
+        return `Here are some great ${category} products I found for you:${" "}`;
+    }
+    const count = products.length;
+    return `I found ${count} product${count > 1 ? "s" : ""} that might interest you:`;
+}
 
 app.use((err, req, res, next) => {
     console.error("Unhandled error:", err.message);
